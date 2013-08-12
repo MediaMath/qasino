@@ -1,0 +1,4 @@
+
+"""
+Tablestats module init code
+"""

@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+export DH_VERBOSE=1
+
+INSTALL_ROOT=debian/qasino
+
+%:
+	dh $@ 
+
+override_dh_auto_install:
+	mkdir -p $(INSTALL_ROOT)/opt/qasino
+	mkdir -p $(INSTALL_ROOT)/opt/qasino/dbs
+	mkdir -p $(INSTALL_ROOT)/var/log/qasino
+	cp -r bin $(INSTALL_ROOT)/opt/qasino/
+	cp -r lib $(INSTALL_ROOT)/opt/qasino/
+	cp -r etc $(INSTALL_ROOT)/opt/qasino/
+	ln -s /var/log/qasino $(INSTALL_ROOT)/opt/qasino/logs 
+	chmod +x $(INSTALL_ROOT)/opt/qasino/bin/*
+

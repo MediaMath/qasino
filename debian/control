@@ -1,0 +1,17 @@
+Source: qasino
+Section: misc
+Priority: extra
+Maintainer: Brad Wasson <bwasson@mediamath.com>
+Homepage: https://github.com/MediaMath/qasino.git
+Vcs-Git: git://github.com/MediaMath/qasino.git
+Vcs-Browser: https://github.com/MediaMath/qasino.git
+Build-Depends: debhelper (>= 7), python (>= 2.7), cdbs
+Standards-Version: 3.9.1
+
+Package: qasino
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}, python (>= 2.7), python-twisted, python-zmq, python-simplejson, python-httplib2
+Description: Collect statistics and store them in a database
+ Qasino is a system for collecting and storiing snapshot statistics
+ in a sqlite database.
+
