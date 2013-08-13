@@ -10,15 +10,15 @@ from optparse import OptionParser
 from twisted.internet import reactor
 from twisted.internet import task
 
-from txzmq import ZmqFactory
-
 for path in [
-    os.path.join('opt', 'tablestats', 'lib'),
+    os.path.join('opt', 'qasino', 'lib'),
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 ]:
     if os.path.exists(os.path.join(path, '__init__.py')):
-        sys.path.append(path)
+        sys.path.insert(0, path)
         break
+
+from txzmq import ZmqFactory
 
 import data_manager
 import json_requestor

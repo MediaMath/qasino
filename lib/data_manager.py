@@ -19,6 +19,7 @@ class DataManager(object):
         self.signal_channel = signal_channel
         self.archive_db_dir = archive_db_dir
 
+        # Start with zero because we'll call swap_dbs instantly below.
         self.db_generation_number = 0
 
         # use_dbfile can be:
@@ -180,7 +181,7 @@ class DataManager(object):
 
         # Increment the generation number.
 
-        self.db_generation_number += 1
+        self.db_generation_number = int(time.time())
 
         # Set the writer to a new db
 

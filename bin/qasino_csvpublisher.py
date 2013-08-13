@@ -7,6 +7,7 @@ from pprint import pprint
 from optparse import OptionParser
 import simplejson
 import re
+import random
 
 from twisted.internet import reactor
 from twisted.internet import task
@@ -37,7 +38,11 @@ def get_csv_files_from_index(index_file):
 
     results = []
 
-    fh = open(index_file, 'r')
+    try:
+        fh = open(index_file, 'r')
+    except Exception as e:
+        logging.info("Failed to open index file '%s': %s", index_file, e)
+        return
 
     for lineno, line in enumerate(fh):
 
@@ -78,7 +83,11 @@ def get_index_list_file_indexes(index_list_file):
 
     # Read the file - each line is the full path to an index file.
 
-    fh = open(index_list_file, "r")
+    try:
+        fh = open(index_list_file, "r")
+    except Exception as e:
+        logging.info("Failed to open index list file '%s': %s", index_list_file, e)
+        return
 
     for line in fh:
 
@@ -110,7 +119,11 @@ def get_table_list_file_tables(table_list_file):
 
     # Read the file - each line is the tablename
 
-    fh = open(table_list_file, "r")
+    try:
+        fh = open(table_list_file, "r")
+    except Exception as e:
+        logging.info("Failed to open table list file '%s': %s", table_list_file, e)
+        return
 
     for line in fh:
 
@@ -130,6 +143,14 @@ def get_table_list_file_tables(table_list_file):
     fh.close()
 
     return result_tables
+
+def initiate_read_and_send_tables(json_requestor, options):
+    """ 
+    Calls read_and_send_tables after a random delay to reduce "storming" the server.
+    """
+    delay = random.randint(0, options.send_delay_max)
+    logging.info("Waiting %d seconds to send data.", delay)
+    reactor.callLater(delay, read_and_send_tables, json_requestor, options)
 
 
 def read_and_send_tables(json_requestor, options):
@@ -214,18 +235,18 @@ def read_and_send_tables(json_requestor, options):
             # ------------------------
             # version
             # tablename
-            # column descriptions (csv)
-            # column types (csv)
             # column names (csv)
+            # column types (csv)
+            # column descriptions (csv)
             # data (csv)
             # ...
             # ------------------------
 
-            # Ignore the first three lines.  Types in 4th, names in 5th.
+            # Ignore the 1st, 2nd and 5th lines.  Names in 3rd, types in 4th.
             table = csv_table_reader.read_table(filepath, tablename,
-                                                skip_linenos={0, 1, 2},
+                                                skip_linenos={0, 1, 4},
                                                 types_lineno=3,
-                                                colnames_lineno=4)
+                                                colnames_lineno=2)
 
             if table == None:
                 logging.info("Failure reading csv file '%s'.", filepath)
@@ -271,6 +292,9 @@ if __name__ == '__main__':
     parser.add_option("-t", "--table-list", dest="table_list",
                       help="Path to a file with a list of tables to limit publishing to" )
 
+    parser.add_option("-s", "--send-delay-max", dest="send_delay_max", default=15,
+                      help="Max delay to add when its time to send tables." )
+
 
     (options, args) = parser.parse_args()
 
@@ -298,7 +322,7 @@ if __name__ == '__main__':
 
     # Read and send the table when a generation signal comes in.
 
-    json_subscriber.subscribe_generation_signal(read_and_send_tables, json_requestor, options)
+    json_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, json_requestor, options)
 
     # Read and send the table at a fixed interval.
 

@@ -13,7 +13,7 @@ import simplejson
 from optparse import OptionParser
 
 for path in [
-    os.path.join('opt', 'tablestats', 'lib'),
+    os.path.join('opt', 'qasino', 'lib'),
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 ]:
     if os.path.exists(os.path.join(path, '__init__.py')):

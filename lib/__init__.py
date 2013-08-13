@@ -1,4 +1,4 @@
 
 """
-Tablestats module init code
+Qasino module init code
 """
