@@ -18,7 +18,10 @@ class JsonPublisher(ZmqPubConnection):
         ZmqPubConnection.__init__(self, zmq_factory, endpoint)
 
 
-    def send_generation_signal(self, generation_number):
+    def send_generation_signal(self, generation_number, generation_duration_s):
         msg = { "op" : "generation_signal", "identity" : Identity.get_identity(), "generation_number" : generation_number }
+        if generation_duration_s:
+            msg["generation_duration_s"] = generation_duration_s
+
         self.publish(json.dumps(msg), "GENSIG")
 

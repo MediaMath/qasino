@@ -8,7 +8,9 @@ import time
 from util import Identity
 
 from twisted.enterprise import adbapi
+from twisted.internet import reactor
 
+import thread
 
 class SqlConnections(object):
     """
@@ -23,30 +25,58 @@ class SqlConnections(object):
         self.connections = {}
 
         self.archive_db_dir = archive_db_dir
+        self.main_thread = thread.get_ident()
         self.open_new_db(filename)
 
     def open_new_db(self, filename):
         self.filename = filename
+        ##adbapi.noisy = True  # and add log.startLogging(sys.stdout) somewhere
         self.dbpool = adbapi.ConnectionPool('sqlite3', filename, check_same_thread=False)
 
+
     def __del__(self):
+
+        # This hack deals with when the condition where the last
+        # reference to the sqlconnections object is held by a callback
+        # and so the dtor is called from within a adbapi thread in the
+        # thread pool.  If we are in one of these threads and call
+        # dbpool.close it will throw an exception saying it can't join
+        # the current thread - leaving a connection.  This may be a
+        # non-issue and it only occurs with the first db created
+        # (generation == 0) but all the same, detect when we are in a
+        # different thread then the one we were contructed in and
+        # schedule a call to shutdown (which must be static since this
+        # is the dtor!) for later.
+
+        if self.main_thread == thread.get_ident():
+            SqlConnections.shutdown(self.dbpool, self.filename, self.archive_db_dir)
+        else:
+            reactor.callLater(0.1, SqlConnections.shutdown, self.dbpool, self.filename, self.archive_db_dir)
+
+    @staticmethod
+    def shutdown(dbpool, filename, archive_db_dir):
         """
         Facilitates cleaning up filesystem objects after the last
         user of the connection pool goes away.
         """
 
-        if self.filename != ':memory:':
+        try:
+            dbpool.close()
+        except Exception as e:
+            logging.info("SqlConnections.__del__: dbpool.close failed: %s", e)
 
-            if self.archive_db_dir:
-                logging.info("Archiving db file '%s' to '%s'", self.filename, self.archive_db_dir)
+        if filename != ':memory:':
+
+            if archive_db_dir:
+                logging.info("Archiving db file '%s' to '%s'", filename, archive_db_dir)
                 try:
-                    os.renames(self.filename, self.archive_db_dir)
+                    os.renames(filename, archive_db_dir)
                 except Exception as e:
                     logging.info("ERROR: Archive failed! %s", e)
             else:
-                logging.info("Removing db file '%s'", self.filename)
+                logging.info("Removing db file '%s'", filename)
                 try:
-                    os.remove(self.filename)
+                    os.remove(filename)
                 except Exception as e:
                     pass  # ignore these
                     ##logging.info("ERROR: Could not remove db file! %s", e)

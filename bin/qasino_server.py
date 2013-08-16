@@ -61,15 +61,24 @@ if __name__ == "__main__":
 
     (options, args) = parser.parse_args()
 
+    logging.info("Qasino server starting")
+
     if options.identity != None:
         Identity.set_identity(options.identity)
+
+    logging.info("Identity is %s", Identity.get_identity())
+
+    if not os.path.exists(options.db_dir):
+        logging.info("Making directory: %s", options.db_dir)
+        os.makedirs(options.db_dir)
 
     # Catch signals
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Create a 0MQ factory
+    
+    # Create a ZMQ factory
 
     zmq_factory = ZmqFactory()
 
@@ -88,7 +97,7 @@ if __name__ == "__main__":
 
     # Make the data manager swap run at fixed intervals.
 
-    swapper_task = task.LoopingCall(data_manager.swap_dbs)
+    swapper_task = task.LoopingCall(data_manager.rotate_dbs)
     swapper_task.start(30.0)
 
 
@@ -129,3 +138,5 @@ if __name__ == "__main__":
     # Run the event loop
 
     reactor.run()
+
+    logging.info("Qasino server exiting")

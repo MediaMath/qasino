@@ -298,8 +298,12 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
 
+    logging.info("Qasino csv publisher starting")
+
     if options.identity != None:
         Identity.set_identity(options.identity)
+
+    logging.info("Identity is %s", Identity.get_identity())
 
     if options.hostname == None:
         logging.info("Please specify a hostname to connect to.")
@@ -336,3 +340,5 @@ if __name__ == '__main__':
     # Run the event loop
 
     reactor.run()
+
+    logging.info("Qasino csv publisher exiting")

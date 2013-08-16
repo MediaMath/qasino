@@ -11,15 +11,16 @@ from twisted.internet import threads
 
 class DataManager(object):
 
-    def __init__(self, use_dbfile, db_dir=None, signal_channel=None, archive_db_dir=None):
+    def __init__(self, use_dbfile, db_dir=None, signal_channel=None, archive_db_dir=None, generation_duration_s=None):
 
         self.saved_tables = {}
         self.query_id = 0
 
+        self.generation_duration_s = generation_duration_s
         self.signal_channel = signal_channel
         self.archive_db_dir = archive_db_dir
 
-        # Start with zero because we'll call swap_dbs instantly below.
+        # Start with zero because we'll call rotate_dbs instantly below.
         self.db_generation_number = 0
 
         # use_dbfile can be:
@@ -62,7 +63,7 @@ class DataManager(object):
         # Call swap dbs to make the writer we just opened the reader
         # and to open a new writer.
 
-        self.swap_dbs()
+        self.rotate_dbs()
 
 
     def get_query_id(self):
@@ -166,7 +167,7 @@ class DataManager(object):
         d.addCallback(self.insert_status_table_complete, self.sql_backend_writer)
 
 
-    def swap_dbs(self):
+    def rotate_dbs(self):
         """ 
         Make the db being written to be the reader db.
         Open a new writer db for all new updates.
@@ -209,7 +210,7 @@ class DataManager(object):
         # Lastly blast out the generation number.
 
         if self.signal_channel != None:
-            self.signal_channel.send_generation_signal(self.db_generation_number)
+            self.signal_channel.send_generation_signal(self.db_generation_number, self.generation_duration_s)
 
     def check_save_table(self, tablename, table, identity, persist, update):
 
