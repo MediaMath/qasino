@@ -7,7 +7,6 @@ import logging
 from optparse import OptionParser
 
 from twisted.internet import reactor
-from twisted.internet import task
 from twisted.application.internet import TCPServer
 from twisted.application.service import Application
 from twisted.web.resource import Resource
@@ -53,11 +52,8 @@ if __name__ == "__main__":
                       help="Use DIR as the sqlite database", metavar="DIR")
     parser.add_option("-k", "--archive-db-dir", dest="archive_db_dir",
                       help="Save database files to DIR after finished (otherwise they are deleted).", metavar="DIR")
-
-
-    #parser.add_option("-q", "--quiet",
-    #                  action="store_false", dest="verbose", default=True,
-    #                  help="don't print status messages to stdout")
+    parser.add_option("-g", "--generation-duration", dest="generation_duration_s", default=30,
+                      help="The length of a collection interval (generation) in seconds.", metavar="SECONDS")
 
     (options, args) = parser.parse_args()
 
@@ -93,13 +89,8 @@ if __name__ == "__main__":
     # pointers for which db is queried and which db is updated.
 
     data_manager = data_manager.DataManager(options.db_file, db_dir=options.db_dir, 
-                                            signal_channel=json_publisher, archive_db_dir=options.archive_db_dir)
-
-    # Make the data manager swap run at fixed intervals.
-
-    swapper_task = task.LoopingCall(data_manager.rotate_dbs)
-    swapper_task.start(30.0)
-
+                                            signal_channel=json_publisher, archive_db_dir=options.archive_db_dir,
+                                            generation_duration_s=options.generation_duration_s)
 
     # Open a lister to receiver SQL queries.
 

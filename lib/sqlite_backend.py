@@ -238,15 +238,15 @@ class SqlConnections(object):
         return rowcount
 
 
-    def async_insert_status_table(self, db_generation_number):
+    def async_insert_info_table(self, db_generation_number, generation_start_epoch, generation_duration_s):
         """ 
         Adds a status table (qasino_server_info) to the database in each generation.
         """
 
         table = { "tablename" : "qasino_server_info",
-                  "column_names" : [ "generation_number", "generation_start_time" ],
-                  "column_types" : [ "int", "varchar" ],
-                  "rows" : [ [ str(db_generation_number), time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime()) ] ]
+                  "column_names" : [ "generation_number", "generation_duration_s", "generation_start_epoch" ],
+                  "column_types" : [ "int", "int", "int" ],
+                  "rows" : [ [ str(db_generation_number), generation_duration_s, generation_start_epoch ] ]
                   }
 
         return self.async_add_table_data(table, Identity.get_identity())
@@ -254,7 +254,7 @@ class SqlConnections(object):
 
     def async_insert_tables_table(self):
         """ 
-        Adds a table (qasino_table_info) to the database with per table info.
+        Adds a table (qasino_server_tables) to the database with per table info.
         """
 
         rows = []
@@ -264,27 +264,27 @@ class SqlConnections(object):
             rows.append( [ tablename, 
                            str(table_data["nr_rows"]),
                            str(table_data["updates"]),
-                           table_data["last_update_dt"] ] )
+                           table_data["last_update_epoch"] ] )
 
-        # chicken and the egg - how do we add ourselves?
+        # the chicken or the egg - how do we add ourselves?
 
-        rows.append( [ "qasino_table_info",
+        rows.append( [ "qasino_server_tables",
                        len(rows) + 1,
                        1,
-                       time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime()) ] )
+                       time.time() ] )
 
 
-        table = { "tablename" : "qasino_table_info",
-                  "column_names" : [ "tablename", "nr_rows", "nr_updates", "last_update_dt" ],
-                  "column_types" : [ "varchar", "int", "int", "varchar" ],
+        table = { "tablename" : "qasino_server_tables",
+                  "column_names" : [ "tablename", "nr_rows", "nr_updates", "last_update_epoch" ],
+                  "column_types" : [ "varchar", "int", "int", "int" ],
                   "rows" : rows
-                  }
+                }
 
         return self.async_add_table_data(table, Identity.get_identity())
 
     def async_insert_connections_table(self):
         """ 
-        Adds a table (qasino_connection_info) to the database with per table info.
+        Adds a table (qasino_server_connections) to the database with per table info.
         """
 
         rows = []
@@ -293,11 +293,11 @@ class SqlConnections(object):
             
             rows.append( [ connection, # identity
                            str(len(connection_data["tables"])),
-                           connection_data["last_update_dt"] ] )
+                           connection_data["last_update_epoch"] ] )
 
-        table = { "tablename" : "qasino_connection_info",
-                  "column_names" : [ "identity", "nr_tables", "last_update_dt" ],
-                  "column_types" : [ "varchar", "int", "varchar" ],
+        table = { "tablename" : "qasino_server_connections",
+                  "column_names" : [ "identity", "nr_tables", "last_update_epoch" ],
+                  "column_types" : [ "varchar", "int", "int" ],
                   "rows" : rows
                 }
 
@@ -375,7 +375,7 @@ class SqlConnections(object):
             rowcount = self.do_insert_table(txn, table)
 
 
-        now = time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime())
+        now = time.time()
 
         nr_rows = len(table["rows"])
 
@@ -384,22 +384,22 @@ class SqlConnections(object):
         if tablename not in self.tables:
             self.tables[tablename] = { "updates" : 1, 
                                        "nr_rows" : rowcount,
-                                       "last_update_dt" : now }
+                                       "last_update_epoch" : now }
         else:
             if not update:
                 self.tables[tablename]["nr_rows"] += rowcount
 
             self.tables[tablename]["updates"] += 1
-            self.tables[tablename]["last_update_dt"] = now
+            self.tables[tablename]["last_update_epoch"] = now
 
         # Keep track of which "identities" have added to a table.
 
         if identity not in self.connections:
 
             self.connections[identity] = { 'tables' : { tablename : rowcount }, 
-                                           'last_update_dt' : now }
+                                           'last_update_epoch' : now }
         else:
-            self.connections[identity]["last_update_dt"] = now
+            self.connections[identity]["last_update_epoch"] = now
 
             if tablename not in self.connections[identity]["tables"]:
                 self.connections[identity]["tables"][tablename] = rowcount

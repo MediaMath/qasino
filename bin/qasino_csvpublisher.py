@@ -8,6 +8,7 @@ from optparse import OptionParser
 import simplejson
 import re
 import random
+import time
 
 from twisted.internet import reactor
 from twisted.internet import task
@@ -159,6 +160,10 @@ def read_and_send_tables(json_requestor, options):
     to a qasino server.
     """
 
+    nr_tables = 0
+    nr_errors = 0
+    table_info = {}
+
     # Make a table whitelist lookup dict.
     table_whitelist = {}
     use_table_whitelist = False
@@ -242,20 +247,80 @@ def read_and_send_tables(json_requestor, options):
             # ...
             # ------------------------
 
+            table_info[tablename] = {}
+            table_info[tablename]["filepath"] = filepath
+            table_info[tablename]["nr_rows"] = -1
+            table_info[tablename]["nr_errors"] = 0
+            table_info[tablename]["error_msg"] = ''
+            table_info[tablename]["read_epoch"] = time.time()
+
             # Ignore the 1st, 2nd and 5th lines.  Names in 3rd, types in 4th.
-            table = csv_table_reader.read_table(filepath, tablename,
-                                                skip_linenos={0, 1, 4},
-                                                types_lineno=3,
-                                                colnames_lineno=2)
+            (table, error) = csv_table_reader.read_table(filepath, tablename,
+                                                         skip_linenos={0, 1, 4},
+                                                         types_lineno=3,
+                                                         colnames_lineno=2)
+
+            table_info[tablename]["read_time_s"] = time.time() - table_info[tablename]["read_epoch"]
 
             if table == None:
-                logging.info("Failure reading csv file '%s'.", filepath)
+                nr_errors += 1
+                table_info[tablename]["nr_errors"] = 1
+                table_info[tablename]["error_msg"] = error
+                logging.info("Failure reading csv file '%s': %s", filepath, error)
                 continue
 
-            logging.info("Sending table '%s' to '%s:%d' (%d rows).", tablename, options.hostname, options.port, len(table["rows"]))
+            nr_tables += 1
+
+            table_info[tablename]["nr_rows"] = len(table["rows"])
+
+            logging.info("Sending table '%s' to '%s:%d' (%d rows).", tablename, options.hostname, options.port, table_info[tablename]["nr_rows"])
 
             json_requestor.send_table(table)
+        
+        # END for each csv file
 
+    # END for each index
+
+    # Publish an info table
+
+    publish_info_table(json_requestor, nr_tables, nr_errors)
+
+    # Publish a table list table.
+
+    publish_tables_table(json_requestor, table_info)
+
+
+def publish_info_table(json_requestor, nr_tables, nr_errors):
+
+    table = { "tablename" : "qasino_csvpublisher_info",
+              "column_names" : [ "identity", "update_epoch", "nr_tables", "nr_errors" ],
+              "column_types" : [ "varchar", "int", "int", "int" ],
+              "rows" : [ [ Identity.get_identity(), time.time(), nr_tables, nr_errors ] ]
+              }
+
+    json_requestor.send_table(table)
+
+def publish_tables_table(json_requestor, table_info):
+
+    rows = []
+
+    for tablename, table_stats in table_info.iteritems():
+        rows.append( [ Identity.get_identity(), 
+                       tablename,
+                       table_stats["read_epoch"], 
+                       table_stats["read_time_s"], 
+                       table_stats["nr_errors"],
+                       table_stats["error_msg"],
+                       table_stats["nr_rows"],
+                       table_stats["filepath"] ] )
+
+    table = { "tablename" : "qasino_csvpublisher_tables",
+              "column_names" : [ "identity", "tablename", "read_epoch", "read_time_s", "nr_errors", "error_msg", "nr_rows", "filepath" ],
+              "column_types" : [ "varchar", "varchar", "int", "int", "int", "int", "int", "varchar" ],
+              "rows" : rows
+              }
+
+    json_requestor.send_table(table)
 
 
 

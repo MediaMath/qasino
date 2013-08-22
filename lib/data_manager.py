@@ -8,10 +8,11 @@ import time
 import re
 
 from twisted.internet import threads
+from twisted.internet import task
 
 class DataManager(object):
 
-    def __init__(self, use_dbfile, db_dir=None, signal_channel=None, archive_db_dir=None, generation_duration_s=None):
+    def __init__(self, use_dbfile, db_dir=None, signal_channel=None, archive_db_dir=None, generation_duration_s=30):
 
         self.saved_tables = {}
         self.query_id = 0
@@ -60,10 +61,17 @@ class DataManager(object):
         self.sql_backend_reader = None
         self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, self, self.archive_db_dir)
 
-        # Call swap dbs to make the writer we just opened the reader
+        # Call rotate dbs to make the writer we just opened the reader
         # and to open a new writer.
 
         self.rotate_dbs()
+
+        # Make the data manager db rotation run at fixed intervals.
+
+        self.rotate_task = task.LoopingCall(self.rotate_dbs)
+        self.rotate_task.start(self.generation_duration_s)
+
+
 
 
     def get_query_id(self):
@@ -119,12 +127,23 @@ class DataManager(object):
 
             return result
 
-        # show tables?
+        # SHOW tables?
 
         m = re.search(r"^\s*show\s+tables\s*;$", sql, flags=re.IGNORECASE)
         if m != None:
-            return sql_backend.do_select(txn, "SELECT * FROM qasino_table_info;")
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_tables;")
 
+        # SHOW connections?
+
+        m = re.search(r"^\s*show\s+connections\s*;$", sql, flags=re.IGNORECASE)
+        if m != None:
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_connections;")
+
+        # SHOW info?
+
+        m = re.search(r"^\s*show\s+info\s*;$", sql, flags=re.IGNORECASE)
+        if m != None:
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', generation_start_epoch, 'unixepoch') generation_start_datetime FROM qasino_server_info;")
 
         # Exit?
 
@@ -150,7 +169,7 @@ class DataManager(object):
         # Finally we can insert the tables table.
         sql_backend_writer.async_insert_tables_table()
 
-    def insert_status_table_complete(self, result, sql_backend_writer):
+    def insert_info_table_complete(self, result, sql_backend_writer):
         # Next insert the connections table.
         d = sql_backend_writer.async_insert_connections_table()
         d.addCallback(self.insert_connections_table_complete, sql_backend_writer)
@@ -158,13 +177,13 @@ class DataManager(object):
     def insert_internal_tables(self):
         # Start with the status table.
 
-        d = self.sql_backend_writer.async_insert_status_table(self.db_generation_number)
+        d = self.sql_backend_writer.async_insert_info_table(self.db_generation_number, time.time(), self.generation_duration_s)
 
         # We must pass the sql_backend_writer through the callback
         # chain and use it rather then self.sql_backend_writer because
-        # self.sql_backend_writer might get "swapped" between async calls.
+        # self.sql_backend_writer might get "rotated" between async calls.
 
-        d.addCallback(self.insert_status_table_complete, self.sql_backend_writer)
+        d.addCallback(self.insert_info_table_complete, self.sql_backend_writer)
 
 
     def rotate_dbs(self):

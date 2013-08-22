@@ -26,7 +26,7 @@ class CsvTableReader(object):
             file = open(filename, 'r')
         except Exception as e:
             logging.error("Failed to open file '%s': %s", filename, e)
-            return
+            return (None, str(e))
     
         column_names = None
         column_types = None
@@ -97,10 +97,10 @@ class CsvTableReader(object):
         except Exception as inst:
             #raise Exception("Csv read error on line %d" % lineno)
             logging.error('Csv read error on line %d: %s', lineno, inst)
-            return
+            return (None, str(inst))
 
-        return { "tablename" : tablename,
-                 "column_names" : column_names,
-                 "column_types" : column_types,
-                 "rows" : output_rows 
-               }
+        return ( { "tablename" : tablename,
+                   "column_names" : column_names,
+                   "column_types" : column_types,
+                   "rows" : output_rows 
+                 }, None )
