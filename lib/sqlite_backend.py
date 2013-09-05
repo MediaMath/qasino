@@ -6,11 +6,14 @@ import logging
 import time
 
 from util import Identity
+import apsw_connection
 
+import apsw
 from twisted.enterprise import adbapi
 from twisted.internet import reactor
 
 import thread
+
 
 class SqlConnections(object):
     """
@@ -31,11 +34,12 @@ class SqlConnections(object):
     def open_new_db(self, filename):
         self.filename = filename
         ##adbapi.noisy = True  # and add log.startLogging(sys.stdout) somewhere
-        self.dbpool = adbapi.ConnectionPool('sqlite3', filename, check_same_thread=False)
-
+        adbapi.connectionFactory = apsw_connection.ApswConnection
+        self.dbpool = adbapi.ConnectionPool('apsw_connection', filename) ##, check_same_thread=False)
+        self.dbpool.connectionFactory = apsw_connection.ApswConnection
+       
 
     def __del__(self):
-
         # This hack deals with when the condition where the last
         # reference to the sqlconnections object is held by a callback
         # and so the dtor is called from within a adbapi thread in the
@@ -89,9 +93,6 @@ class SqlConnections(object):
         try: 
             txn.execute(sql)
 
-        except sqlite3.OperationalError as e:
-            return { "retval": 1, "error_message" : e }
-
         except Exception as e:
             return { "retval": 1, "error_message" : e }
             
@@ -103,7 +104,7 @@ class SqlConnections(object):
 
         column_names = []
 
-        for column_index, column_name in enumerate(txn.description):
+        for column_index, column_name in enumerate(txn.getdescription()):
 
             if not max_widths.has_key(str(column_index)) or max_widths[str(column_index)] < len(column_name[0]):
                 max_widths[str(column_index)] = len(column_name[0])
@@ -171,10 +172,7 @@ class SqlConnections(object):
 
         result = None
 
-        try:
-            result = txn.execute(sql)
-        except Exception as e:
-            logging.info("Warning: sql failure '%s' for:\n %s", e, sql)
+        result = txn.execute(sql)
 
         return result
 
@@ -205,10 +203,7 @@ class SqlConnections(object):
 
         bind_values.append(identity)
 
-        try:
-            txn.execute(sql, bind_values)
-        except Exception as e:
-            logging.info("ERROR: Failed to update table '%s' (%s): %s", tablename, sql, e)
+        txn.execute(sql, bind_values)
 
         return txn.rowcount
 
@@ -218,8 +213,7 @@ class SqlConnections(object):
         column_str = ", ".join( table["column_names"] )
         bind_str = ", ".join( [ "?" for x in table["column_names"] ] )
 
-        # TODO: more efficient inserts
-        # TODO: transactional (all or none)
+        sql = ''
 
         rowcount = 0
 
@@ -227,13 +221,9 @@ class SqlConnections(object):
 
             sql = "INSERT INTO %s ( %s ) VALUES ( %s )" % (tablename, column_str, bind_str)
 
-            try:
-                txn.execute(sql, row )
-            except Exception as e:
-                logging.info("ERROR: Failed to insert into table '%s' (%s): %s", tablename, sql, e)
-                break
+            txn.execute(sql, row )
 
-            rowcount += txn.rowcount
+            rowcount += 1
 
         return rowcount
 
@@ -338,42 +328,73 @@ class SqlConnections(object):
 
         did_create = False
 
-        schema = self.get_schema(txn, tablename)
+        try:
+            # Do this before the transaction because it will fail if
+            # the table doesn't exist but that is ok.
 
-        if schema == None or len(schema) <= 0:
-            create_sql = "CREATE TABLE %s ( \n" % tablename
+            schema = self.get_schema(txn, tablename)
 
-            columns = []
+            # Wrap the create, alter tables and inserts or updates in
+            # a transaction... All or none please.
+
+            txn.execute("BEGIN DEFERRED;")
+
+            # Do we need to create the table?
+
+            if schema == None or len(schema) <= 0:
+                create_sql = "CREATE TABLE %s ( \n" % tablename
+
+                columns = []
             
-            for column_name, column_type in zip(table["column_names"], table["column_types"]):
-                columns.append( "%s %s DEFAULT NULL" % (column_name, column_type) )
+                for column_name, column_type in zip(table["column_names"], table["column_types"]):
+                    columns.append( "%s %s DEFAULT NULL" % (column_name, column_type) )
 
-            create_sql += ",\n".join( columns )
+                create_sql += ",\n".join( columns )
 
-            create_sql += ")"
+                create_sql += ")"
 
-            logging.info("DataManager: Creating table '%s' from '%s'", tablename, identity)
+                logging.info("DataManager: Creating table '%s' from '%s'", tablename, identity)
 
-            result = self.do_sql(txn, create_sql)
-            if result != None:
-                did_create = True
+                result = self.do_sql(txn, create_sql)
+                if result != None:
+                    did_create = True
 
-        else:
-            logging.info("DataManager: Adding to table '%s' from '%s'", tablename, identity)
+            else:
+                logging.info("DataManager: Adding to table '%s' from '%s'", tablename, identity)
 
 
-        # If we were not first and didn't create the table we need to check for merge.
+            # If we were not first and didn't create the table we need to check for merge.
 
-        if not did_create:
-            self.data_manager.table_merger.merge_table(txn, table, schema, self)
+            if not did_create:
+                self.data_manager.table_merger.merge_table(txn, table, schema, self)
 
-        # Now update the table - call do_update if this is an update type and we didn't create the initial table.
+            # Now update the table - call do_update if this is an update type and we didn't create the initial table.
 
-        if update and not did_create:
-            rowcount = self.do_update_table(txn, table, identity)
-        else:
-            rowcount = self.do_insert_table(txn, table)
+            if update and not did_create:
+                rowcount = self.do_update_table(txn, table, identity)
+            else:
+                rowcount = self.do_insert_table(txn, table)
 
+            txn.execute("COMMIT;")
+
+        except apsw.BusyError as e:
+            # This should only happen if we exceed the busy timeout.
+
+            logging.info("WARNING: Lock contention for adding table '%s': %s", tablename, e)
+
+            txn.execute("ROLLBACK;")
+
+            # Place this request back on the event queue for a retry.
+            self.async_add_table_data(table, identity, persist=persist, update=update)
+
+            return 0
+
+        except Exception as e:
+            logging.info("ERROR: Failed to add table '%s': %s", tablename, e)
+
+            txn.execute("ROLLBACK;")
+
+            return 0
 
         now = time.time()
 

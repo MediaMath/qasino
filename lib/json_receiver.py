@@ -19,7 +19,14 @@ class JsonReceiver(ZmqREPConnection):
                                   
     def gotMessage(self, messageId, *messageParts):
 
-        obj = json.loads(messageParts[0])
+        try:
+            obj = json.loads(messageParts[0])
+        except Exception as e:
+            logging.error("JsonReceiver: Error, failed to parse json message.")
+            response_meta = { "response_op" : "error", "error_message" : "Failed to parse JSON message: %s" % str(e), "identity" : Identity.get_identity() }
+            self.reply(messageId, json.dumps(response_meta))
+            return
+
         response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : "Unspecified error" }
 
         if obj == None or obj["op"] == None:
@@ -51,12 +58,18 @@ class JsonReceiver(ZmqREPConnection):
                 response_meta = { "response_op" : "error", "error_message" : "Must specify sql", "identity" : Identity.get_identity() }
                 self.reply(messageId, json.dumps(response_meta))
             else:
-                self.process_sql_statement(obj["sql"], messageId, use_write_db=use_write_db)
+                try:
+                    self.process_sql_statement(obj["sql"], messageId, use_write_db=use_write_db)
+                except Exception as e:
+                    logging.error('JsonReceiver: Invalid message received from client: error="%s", msg="%s"', str(e), str(obj))
+                    response_meta = { "response_op" : "error", "error_message" : "Must specify sql", "identity" : Identity.get_identity() }
+                    self.reply(messageId, json.dumps(response_meta))
+
                 # Response is handled in the callback.
                 return
 
         else:
-            logging.error("JsonReceiver:: Error, unrecognized op '%s'", obj["op"])
+            logging.error("JsonReceiver: Error, unrecognized op '%s'", obj["op"])
             response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : "Unrecognized op '%s'" % obj["op"] }
             self.reply(messageId, json.dumps(response_meta))
 

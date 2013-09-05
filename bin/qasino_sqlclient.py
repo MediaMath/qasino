@@ -2,6 +2,7 @@
 
 import sys
 import os
+import signal
 import cmd
 import readline
 import json
@@ -133,7 +134,10 @@ class QasinoCmd(cmd.Cmd):
     def do_EOF(self, line):
         return True
 
-
+def signal_handler(signum, frame):
+    sig_names = dict((k, v) for v, k in signal.__dict__.iteritems() if v.startswith('SIG'))
+    print "Caught %s.  Exiting..." % sig_names[signum]
+    exit(0)
 
 if __name__ == "__main__":
 
@@ -156,6 +160,11 @@ if __name__ == "__main__":
     if options.hostname == None:
         print "Please specify a hostname to connect to."
         exit(1)
+
+    # Catch signals
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     print "Connecting to %s:%d." % (options.hostname, options.port)
 

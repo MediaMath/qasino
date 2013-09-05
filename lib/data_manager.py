@@ -131,13 +131,13 @@ class DataManager(object):
 
         m = re.search(r"^\s*show\s+tables\s*;$", sql, flags=re.IGNORECASE)
         if m != None:
-            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_tables;")
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_tables order by tablename;")
 
         # SHOW connections?
 
         m = re.search(r"^\s*show\s+connections\s*;$", sql, flags=re.IGNORECASE)
         if m != None:
-            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_connections;")
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_connections order by identity;")
 
         # SHOW info?
 

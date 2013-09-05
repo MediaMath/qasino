@@ -292,15 +292,21 @@ def read_and_send_tables(json_requestor, options):
 
 def publish_info_table(json_requestor, nr_tables, nr_errors):
 
-    table = { "tablename" : "qasino_csvpublisher_info",
+    tablename = "qasino_csvpublisher_info"
+
+    table = { "tablename" : tablename,
               "column_names" : [ "identity", "update_epoch", "nr_tables", "nr_errors" ],
               "column_types" : [ "varchar", "int", "int", "int" ],
               "rows" : [ [ Identity.get_identity(), time.time(), nr_tables, nr_errors ] ]
               }
 
+    logging.info("Sending table '%s' to '%s:%d' (1 rows).", tablename, options.hostname, options.port)
+
     json_requestor.send_table(table)
 
 def publish_tables_table(json_requestor, table_info):
+
+    this_tablename = "qasino_csvpublisher_tables"
 
     rows = []
 
@@ -314,11 +320,13 @@ def publish_tables_table(json_requestor, table_info):
                        table_stats["nr_rows"],
                        table_stats["filepath"] ] )
 
-    table = { "tablename" : "qasino_csvpublisher_tables",
+    table = { "tablename" : this_tablename,
               "column_names" : [ "identity", "tablename", "read_epoch", "read_time_s", "nr_errors", "error_msg", "nr_rows", "filepath" ],
               "column_types" : [ "varchar", "varchar", "int", "int", "int", "int", "int", "varchar" ],
               "rows" : rows
               }
+
+    logging.info("Sending table '%s' to '%s:%d' (%d rows).", this_tablename, options.hostname, options.port, len(rows))
 
     json_requestor.send_table(table)
 

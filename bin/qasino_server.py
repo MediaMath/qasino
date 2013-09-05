@@ -11,6 +11,7 @@ from twisted.application.internet import TCPServer
 from twisted.application.service import Application
 from twisted.web.resource import Resource
 from twisted.web.server import Site
+from twisted.python import log
 
 for path in [
     os.path.join('opt', 'qasino', 'lib'),
@@ -31,8 +32,9 @@ import json_publisher
 import constants
 from util import Identity
 
-def signal_handler(signal, frame):
-    logging.info("Caught %s.  Exiting...", signal)
+def signal_handler(signum, frame):
+    sig_names = dict((k, v) for v, k in signal.__dict__.iteritems() if v.startswith('SIG'))
+    logging.info("Caught %s.  Exiting...", sig_names[signum])
     if data_manager:
         data_manager.shutdown()
     reactor.stop()
@@ -73,6 +75,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # For verbose adbapi logging...
+    ##log.startLogging(sys.stdout)
     
     # Create a ZMQ factory
 

@@ -102,7 +102,7 @@ def pretty_print_table(outputter, table, max_widths=None, column_delim="  "):
     # Print the column names
 
     outputter.sendLine(
-        column_delim.join( [ column_name.rjust(max_widths[str(index)])
+        column_delim.join( [ str(column_name.rjust(max_widths[str(index)]))
                              for index, column_name in enumerate(table["column_names"]) 
                            ] 
                          )
