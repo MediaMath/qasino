@@ -149,7 +149,7 @@ def initiate_read_and_send_tables(json_requestor, options):
     """ 
     Calls read_and_send_tables after a random delay to reduce "storming" the server.
     """
-    delay = random.randint(0, options.send_delay_max)
+    delay = random.randint(0, int(options.send_delay_max))
     logging.info("Waiting %d seconds to send data.", delay)
     reactor.callLater(delay, read_and_send_tables, json_requestor, options)
 

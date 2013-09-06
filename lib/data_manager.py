@@ -246,7 +246,7 @@ class DataManager(object):
 
         for tablename, table_data in self.saved_tables.iteritems():
 
-            logging.info("Adding saved table '%s' from '%s'", tablename, table_data["identity"])
+            logging.info("DataManager: Adding saved table '%s' from '%s'", tablename, table_data["identity"])
 
             update = True if "update" in table_data and table_data["update"] else False
 

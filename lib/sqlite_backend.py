@@ -14,6 +14,8 @@ from twisted.internet import reactor
 
 import thread
 
+class CreateTableException(Exception):
+    pass
 
 class SqlConnections(object):
     """
@@ -72,21 +74,18 @@ class SqlConnections(object):
         if filename != ':memory:':
 
             if archive_db_dir:
-                logging.info("Archiving db file '%s' to '%s'", filename, archive_db_dir)
+                logging.info("SqlConnections: Archiving db file '%s' to '%s'", filename, archive_db_dir)
                 try:
                     os.renames(filename, archive_db_dir)
                 except Exception as e:
-                    logging.info("ERROR: Archive failed! %s", e)
+                    logging.info("SqlConnections: ERROR: Archive failed! %s", e)
             else:
-                logging.info("Removing db file '%s'", filename)
+                logging.info("SqlConnections: Removing db file '%s'", filename)
                 try:
                     os.remove(filename)
                 except Exception as e:
                     pass  # ignore these
-                    ##logging.info("ERROR: Could not remove db file! %s", e)
-
-#    def get_sql_receiver(self, factory, connection_id):
-#        return SqlReceiver(factory, connection_id)
+                    ##logging.info("SqlConnections: ERROR: Could not remove db file! %s", e)
 
     def do_select(self, txn, sql):
 
@@ -156,13 +155,10 @@ class SqlConnections(object):
 
         schema = []
 
-        try: 
-            txn.execute("pragma table_info(%s);" % table)
+        txn.execute("pragma table_info( %s );" % table)
 
-            for row in txn.fetchall():
-                schema.append( [ str(row[1]), str(row[2]) ] )
-        except:
-            pass
+        for row in txn.fetchall():
+            schema.append( [ str(row[1]), str(row[2]) ] )
 
         return schema
 
@@ -316,10 +312,10 @@ class SqlConnections(object):
 
         try:
             if not update and self.connections[identity]["tables"][tablename] > 0:
-                logging.info("DataManager: '%s' has already sent an update for table '%s'", identity, tablename)
+                logging.info("SqlConnections: '%s' has already sent an update for table '%s'", identity, tablename)
                 return
             else:
-                logging.info("DataManager: Update for table '%s' from '%s'", tablename, identity)
+                logging.info("SqlConnections: Update for table '%s' from '%s'", tablename, identity)
         except KeyError:
             # Ignore
             pass
@@ -329,19 +325,21 @@ class SqlConnections(object):
         did_create = False
 
         try:
-            # Do this before the transaction because it will fail if
-            # the table doesn't exist but that is ok.
-
-            schema = self.get_schema(txn, tablename)
-
             # Wrap the create, alter tables and inserts or updates in
             # a transaction... All or none please.
 
-            txn.execute("BEGIN DEFERRED;")
+            txn.execute("BEGIN;")
+
+            # Use this to detect if the table already exists - we
+            # could just not do this and use the create table to
+            # detect if a table is already there or not...
+
+            schema = self.get_schema(txn, tablename)
 
             # Do we need to create the table?
 
             if schema == None or len(schema) <= 0:
+
                 create_sql = "CREATE TABLE %s ( \n" % tablename
 
                 columns = []
@@ -353,14 +351,28 @@ class SqlConnections(object):
 
                 create_sql += ")"
 
-                logging.info("DataManager: Creating table '%s' from '%s'", tablename, identity)
+                logging.info("SqlConnections: Creating table '%s' from '%s'", tablename, identity)
 
-                result = self.do_sql(txn, create_sql)
+                try:
+                    result = self.do_sql(txn, create_sql)
+                except Exception as e:
+                    errorstr = str(e)
+
+                    # Is this a "table already created" error?  Then its a race condition between checking if a table exists and actually creating it.
+                    if "already exists" in errorstr:
+                        # Don't need to log this as it is fairly common.
+                        ##logging.info("SqlConnections: Warning: Create table race condition '%s' for %s: '%s' ... retrying", tablename, identity, errorstr)
+                        raise CreateTableException("Create table race condition '%s' for %s: '%s'" % (tablename, identity, errorstr,))
+
+                    else:
+                        # Otherwise some kind of sql error, pass the exception up
+                        raise e
+
                 if result != None:
                     did_create = True
 
             else:
-                logging.info("DataManager: Adding to table '%s' from '%s'", tablename, identity)
+                logging.info("SqlConnections: Adding to table '%s' from '%s'", tablename, identity)
 
 
             # If we were not first and didn't create the table we need to check for merge.
@@ -379,8 +391,17 @@ class SqlConnections(object):
 
         except apsw.BusyError as e:
             # This should only happen if we exceed the busy timeout.
+            logging.info("SqlConnections: Warning: Lock contention for adding table '%s': %s for %s", tablename, str(e), identity)
 
-            logging.info("WARNING: Lock contention for adding table '%s': %s", tablename, e)
+            txn.execute("ROLLBACK;")
+
+            # Place this request back on the event queue for a retry.
+            self.async_add_table_data(table, identity, persist=persist, update=update)
+
+            return 0
+
+        except CreateTableException as e:
+            # Message when raised
 
             txn.execute("ROLLBACK;")
 
@@ -390,7 +411,7 @@ class SqlConnections(object):
             return 0
 
         except Exception as e:
-            logging.info("ERROR: Failed to add table '%s': %s", tablename, e)
+            logging.info("SqlConnections: ERROR: Failed to add table '%s': %s", tablename, e)
 
             txn.execute("ROLLBACK;")
 
