@@ -90,7 +90,7 @@ class SqlConnections(object):
     def do_select(self, txn, sql):
 
         try: 
-            txn.execute(sql)
+            retval = txn.execute(sql)
 
         except Exception as e:
             return { "retval": 1, "error_message" : e }
@@ -103,12 +103,23 @@ class SqlConnections(object):
 
         column_names = []
 
-        for column_index, column_name in enumerate(txn.getdescription()):
+        try:
+            for column_index, column_name in enumerate(txn.getdescription()):
 
-            if not max_widths.has_key(str(column_index)) or max_widths[str(column_index)] < len(column_name[0]):
-                max_widths[str(column_index)] = len(column_name[0])
+                if not max_widths.has_key(str(column_index)) or max_widths[str(column_index)] < len(column_name[0]):
+                    max_widths[str(column_index)] = len(column_name[0])
             
-            column_names.append(column_name[0])
+                column_names.append(column_name[0])
+
+        except apsw.ExecutionCompleteError as e:
+            # Ugh, getdescription fails if the query succeeds but returns no rows!  This is the message:
+            #    "Can't get description for statements that have completed execution"
+
+            # For now return a zero row empty table:
+
+            data = { "column_names" : [ "no_data" ], "rows" : [ ] }
+
+            return { "retval" : 0, "error_message" : '', "data" : data, "max_widths" : { "0" : 7 } }
 
         # Save the data here:
 
