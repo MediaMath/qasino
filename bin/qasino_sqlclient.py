@@ -94,7 +94,7 @@ class QasinoCmd(cmd.Cmd):
 
 
     def default(self, line):
-        self.sql_statement = self.sql_statement + line.rstrip('\n')
+        self.sql_statement = self.sql_statement + ' ' + line.rstrip('\n')
 
         if sqlite3.complete_statement(self.sql_statement):
 
@@ -114,7 +114,7 @@ class QasinoCmd(cmd.Cmd):
                 if m or m2 or m3:
                     self.send_query(self.sql_statement, self.use_write_db)
                 else:
-                    print "Unrecognized statement."
+                    print "Unrecognized statement: ", self.sql_statement
 
             self.reset_multiline()
 
