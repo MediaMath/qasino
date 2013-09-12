@@ -117,9 +117,9 @@ class SqlConnections(object):
 
             # For now return a zero row empty table:
 
-            data = { "column_names" : [ "no_data" ], "rows" : [ ] }
+            data = { "column_names" : [ "query returned zero rows" ], "rows" : [ ] }
 
-            return { "retval" : 0, "error_message" : '', "data" : data, "max_widths" : { "0" : 7 } }
+            return { "retval" : 0, "error_message" : '', "data" : data, "max_widths" : { "0" : 24 } }
 
         # Save the data here:
 
