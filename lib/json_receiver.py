@@ -62,7 +62,7 @@ class JsonReceiver(ZmqREPConnection):
                     self.process_sql_statement(obj["sql"], messageId, use_write_db=use_write_db)
                 except Exception as e:
                     logging.error('JsonReceiver: Invalid message received from client: error="%s", msg="%s"', str(e), str(obj))
-                    response_meta = { "response_op" : "error", "error_message" : "Must specify sql", "identity" : Identity.get_identity() }
+                    response_meta = { "response_op" : "error", "error_message" : str(e), "identity" : Identity.get_identity() }
                     self.reply(messageId, json.dumps(response_meta))
 
                 # Response is handled in the callback.

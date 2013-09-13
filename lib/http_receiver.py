@@ -1,9 +1,12 @@
 
 from pprint import pprint
 from twisted.web.resource import Resource
+from twisted.web.server import NOT_DONE_YET
 import logging
 import json
 import re
+import time
+import sqlite3
 
 from util import Identity
 
@@ -70,6 +73,98 @@ class HttpReceiver(Resource):
                     response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : str(e) }
                 
                 return json.dumps(response_meta)
+            if request.args['op'][0] == "query":
+
+                obj = dict()
+                try:
+                    obj = json.loads(newdata)
+                except Exception as e:
+                    response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : str(e) }
+
+                if 'sql' not in obj:
+                    response_meta = { "response_op" : "error", "error_message" : "Must specify 'sql' param", "identity" : Identity.get_identity() }
+                    logging.info("HttpReceiver: Query received with no sql.")
+                    return json.dumps(response_meta)
+
+                try:
+                    self.process_sql_statement(obj["sql"], request)
+                    return NOT_DONE_YET
+                except Exception as e:
+                    logging.error('HttpReceiver: Error processing sql: %s: %s', str(e), obj["sql"])
+                    response_meta = { "response_op" : "error", "error_message" : str(e), "identity" : Identity.get_identity() }
+                    return json.dumps(response_meta)
+                
+                return json.dumps(result)
 
         response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : "Unrecognized operation" }
         return json.dumps(response_meta)
+
+
+    def process_sql_statement(self, sql_statement, request):
+
+        query_id = self.data_manager.get_query_id()
+
+        query_start = time.time()
+
+        logging.info("HttpReceiver: (%d) SQL received: %s", query_id, sql_statement.rstrip())
+
+        if not sqlite3.complete_statement(sql_statement):
+
+            # Try adding a semicolon at the end.
+            sql_statement = sql_statement + ";"
+
+            if not sqlite3.complete_statement(sql_statement):
+                
+                response_meta = { "response_op" : "error", 
+                                  "error_message" : "Incomplete sql statement",
+                                  "identity" : Identity.get_identity() }
+                request.write(json.dumps(response_meta))
+                request.finish()
+                return
+
+            # else it is now a complete statement
+
+        d = self.data_manager.async_validate_and_route_query(sql_statement, query_id)
+
+        d.addCallback(self.sql_complete_callback, query_id, query_start, request)
+
+    def sql_complete_callback(self, result, query_id, query_start, request):
+        """
+        Called when a sql statement completes.
+        """
+
+        # To start just our identity.
+
+        # To start just our identity.
+        response_meta = { "identity" : Identity.get_identity() }
+
+        retval = result["retval"]
+        error_message = ''
+        if "error_message" in result:
+                error_message = str(result["error_message"])
+
+        # Success?
+
+        if retval == 0 and "data" in result:
+
+            response_meta["response_op"] = "result_table"
+            response_meta["table"] = result["data"]
+
+            if "max_widths" in result:
+                response_meta["max_widths"] = result["max_widths"]
+
+        # Or error?
+
+        if retval != 0:
+            logging.info("HttpReceiver: (%d) SQL error: %s", query_id, error_message)
+
+            response_meta["response_op"] = "error"
+            response_meta["error_message"] = error_message
+
+        else:
+            logging.info("HttpReceiver: (%d) SQL completed (%.02f seconds)", query_id, time.time() - query_start)
+
+        # Send the response!
+
+        request.write(json.dumps(response_meta))
+        request.finish()
