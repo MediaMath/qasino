@@ -313,6 +313,11 @@ class SqlConnections(object):
         This is executed using adbapi in a thread pool.
         """
 
+        # For when we hit lock contention - only retry so many times.
+
+        if "retry_count" not in table:
+            table["retry_count"] = 5
+
         tablename = table["tablename"]
 
         # Check if we need to save the table in case of persistence.
@@ -369,7 +374,7 @@ class SqlConnections(object):
                 except Exception as e:
                     errorstr = str(e)
 
-                    # Is this a "table already created" error?  Then its a race condition between checking if a table exists and actually creating it.
+                    # Is this a "table already exists" error?  Then its a race condition between checking if a table exists and actually creating it.
                     if "already exists" in errorstr:
                         # Don't need to log this as it is fairly common.
                         ##logging.info("SqlConnections: Warning: Create table race condition '%s' for %s: '%s' ... retrying", tablename, identity, errorstr)
@@ -406,6 +411,12 @@ class SqlConnections(object):
 
             txn.execute("ROLLBACK;")
 
+            # Should we try again?
+            table["retry_count"] -= 1 
+            if table["retry_count"] <= 0:
+                logging.info("SqlConnections: ERROR: Retries failed for table '%s'", tablename)
+                return 0
+
             # Place this request back on the event queue for a retry.
             self.async_add_table_data(table, identity, persist=persist, update=update)
 
@@ -415,6 +426,12 @@ class SqlConnections(object):
             # Message when raised
 
             txn.execute("ROLLBACK;")
+
+            # Should we try again?
+            table["retry_count"] -= 1 
+            if table["retry_count"] <= 0:
+                logging.info("SqlConnections: ERROR: Retries failed for table '%s'", tablename)
+                return 0
 
             # Place this request back on the event queue for a retry.
             self.async_add_table_data(table, identity, persist=persist, update=update)
