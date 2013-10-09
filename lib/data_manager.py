@@ -6,16 +6,22 @@ import table_merger
 import logging
 import time
 import re
+import yaml
+import sys
+import thread
 
 from twisted.internet import threads
 from twisted.internet import task
 
 class DataManager(object):
 
-    def __init__(self, use_dbfile, db_dir=None, signal_channel=None, archive_db_dir=None, generation_duration_s=30):
+    def __init__(self, use_dbfile, db_dir=None, signal_channel=None, archive_db_dir=None, 
+                 generation_duration_s=30):
 
         self.saved_tables = {}
         self.query_id = 0
+        self.views = {}
+        self.thread_id = thread.get_ident()
 
         self.generation_duration_s = generation_duration_s
         self.signal_channel = signal_channel
@@ -59,31 +65,50 @@ class DataManager(object):
             db_file_name = self.db_name % self.db_generation_number
 
         self.sql_backend_reader = None
-        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, self, self.archive_db_dir)
-
-        # Call rotate dbs to make the writer we just opened the reader
-        # and to open a new writer.
-
-        self.rotate_dbs()
+        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, self, self.archive_db_dir, self.thread_id)
 
         # Make the data manager db rotation run at fixed intervals.
+        # This will also immediately make the call which will make the
+        # writer we just opened the reader and to open a new writer.
 
-        self.rotate_task = task.LoopingCall(self.rotate_dbs)
+        self.rotate_task = task.LoopingCall(self.async_rotate_dbs)
         self.rotate_task.start(self.generation_duration_s)
 
 
+    def read_views(self, filename):
 
+        # Reset views
+        self.views = {}
+
+        try:
+            fh = open(filename, "r")
+        except Exception as e:
+            logging.info("Failed to open views file '%s': %s", filename, e)
+            return
+
+        try:
+            view_conf_obj = yaml.load(fh)
+        except Exception as e:
+            logging.info("Failed to parse view conf yaml file '%s': %s", filename, e)
+            return
+
+        for view in view_conf_obj:
+
+            try:
+                viewname = view["viewname"]
+                view = view["view"]
+                self.views[viewname] = { 'view' : view, 'loaded' : False, 'error' : '' }
+            except Exception as e:
+                logging.info("Failure getting view '%s': %s", view["viewname"] if "viewname" in view else 'unknown', e)
 
     def get_query_id(self):
         self.query_id += 1
         return self.query_id
 
     def shutdown(self):
-        if self.sql_backend_reader:
-            self.sql_backend_reader = None
-
-        if self.sql_backend_writer:
-            self.sql_backend_writer = None
+        self.rotate_task = None
+        self.sql_backend_reader = None
+        self.sql_backend_writer = None
 
 
     def async_validate_and_route_query(self, sql, query_id, use_write_db=False):
@@ -112,7 +137,7 @@ class DataManager(object):
         Called for non-select statements like show tables and desc.
         """
 
-        # desc?
+        # DESC?
 
         m = re.search(r"^\s*desc\s+(\S+)\s*;$", sql, flags=re.IGNORECASE)
 
@@ -127,23 +152,35 @@ class DataManager(object):
 
             return result
 
+        # DESC VIEW?
+
+        m = re.search(r"^\s*desc\s+view\s+(\S+)\s*;$", sql, flags=re.IGNORECASE)
+        if m != None:
+            return sql_backend.do_select(txn, "SELECT view FROM qasino_server_views WHERE viewname = '%s';" % m.group(1))
+            
         # SHOW tables?
 
         m = re.search(r"^\s*show\s+tables\s*;$", sql, flags=re.IGNORECASE)
         if m != None:
-            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_tables order by tablename;")
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_tables ORDER BY tablename;")
 
         # SHOW connections?
 
         m = re.search(r"^\s*show\s+connections\s*;$", sql, flags=re.IGNORECASE)
         if m != None:
-            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_connections order by identity;")
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_connections ORDER BY identity;")
 
         # SHOW info?
 
         m = re.search(r"^\s*show\s+info\s*;$", sql, flags=re.IGNORECASE)
         if m != None:
             return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', generation_start_epoch, 'unixepoch') generation_start_datetime FROM qasino_server_info;")
+
+        # SHOW views?
+
+        m = re.search(r"^\s*show\s+views\s*;$", sql, flags=re.IGNORECASE)
+        if m != None:
+            return sql_backend.do_select(txn, "SELECT viewname, loaded, errormsg FROM qasino_server_views ORDER BY viewname;")
 
         # Exit?
 
@@ -160,33 +197,35 @@ class DataManager(object):
         return self.sql_backend_reader.tables
 
 
-    # This ugly hack insures all the internal tables are inserted
+    # This hack insures all the internal tables are inserted
     # using the same sql_backend_writer and makes sure that the
     # "tables" table is called last (after all the other internal
     # tables are added).
 
-    def insert_connections_table_complete(self, result, sql_backend_writer):
-        # Finally we can insert the tables table.
-        sql_backend_writer.async_insert_tables_table()
+    def insert_internal_tables(self, txn, sql_backend_writer, db_generation_number, time, generation_duration_s, views):
 
-    def insert_info_table_complete(self, result, sql_backend_writer):
-        # Next insert the connections table.
-        d = sql_backend_writer.async_insert_connections_table()
-        d.addCallback(self.insert_connections_table_complete, sql_backend_writer)
+        sql_backend_writer.insert_info_table(txn, db_generation_number, time, generation_duration_s)
 
-    def insert_internal_tables(self):
-        # Start with the status table.
+        sql_backend_writer.insert_connections_table(txn)
 
-        d = self.sql_backend_writer.async_insert_info_table(self.db_generation_number, time.time(), self.generation_duration_s)
+        # this should be second last so views can be created of any tables above.
+        # this means though that you can not create views of any tables below.
+        sql_backend_writer.add_views(txn, views)
 
-        # We must pass the sql_backend_writer through the callback
-        # chain and use it rather then self.sql_backend_writer because
-        # self.sql_backend_writer might get "rotated" between async calls.
+        sql_backend_writer.insert_views_table(txn, views)
 
-        d.addCallback(self.insert_info_table_complete, self.sql_backend_writer)
+        # this should be last to include all the above tables
+        sql_backend_writer.insert_tables_table(txn)
 
+    def async_rotate_dbs(self):
+        """
+        Kick off the rotate in a sqlconnection context because we have
+        some internal tables and views to add before we rotate dbs.
+        """
+        
+        self.sql_backend_writer.run_interaction(self.rotate_dbs)
 
-    def rotate_dbs(self):
+    def rotate_dbs(self, txn):
         """ 
         Make the db being written to be the reader db.
         Open a new writer db for all new updates.
@@ -195,9 +234,15 @@ class DataManager(object):
         logging.info("**** DataManager: Starting generation %d", self.db_generation_number)
 
         # Before making the write db the read db, 
-        # add various internal info tables.
+        # add various internal info tables and views.
 
-        self.insert_internal_tables()
+
+        self.insert_internal_tables(txn, 
+                                    self.sql_backend_writer, 
+                                    self.db_generation_number, 
+                                    time.time(), 
+                                    self.generation_duration_s, 
+                                    self.views)
 
         # Increment the generation number.
 
@@ -214,9 +259,10 @@ class DataManager(object):
         if not self.one_db:
                 db_file_name = self.db_name % self.db_generation_number
 
-        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, self, self.archive_db_dir)
+        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, self, self.archive_db_dir, self.thread_id)
 
         # Set the reader to what was the writer
+        # Note the reader will (should) be deconstructed here.
 
         self.sql_backend_reader = save_sql_backend_writer
 
@@ -224,12 +270,11 @@ class DataManager(object):
 
         self.async_add_saved_tables()
 
-        # Note the reader will (should) be deconstructed here.
-
         # Lastly blast out the generation number.
 
         if self.signal_channel != None:
             self.signal_channel.send_generation_signal(self.db_generation_number, self.generation_duration_s)
+
 
     def check_save_table(self, tablename, table, identity, persist, update):
 

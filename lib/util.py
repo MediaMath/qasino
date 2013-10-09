@@ -93,7 +93,7 @@ def pretty_print_table(outputter, table, max_widths=None, column_delim="  "):
 
             for column_index, cell in enumerate(row):
 
-                length = len(cell)
+                length = len(str(cell))
 
                 if not max_widths.has_key(str(column_index)) or max_widths[str(column_index)] < length:
                     max_widths[str(column_index)] = length
@@ -125,7 +125,7 @@ def pretty_print_table(outputter, table, max_widths=None, column_delim="  "):
 
         nr_rows += 1
 
-        line = column_delim.join( [ cell.rjust(max_widths[str(index)]) 
+        line = column_delim.join( [ str(cell).rjust(max_widths[str(index)]) 
                                     for index, cell in enumerate(row) 
                                   ] 
                                 )

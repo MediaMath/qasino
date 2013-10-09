@@ -53,8 +53,8 @@ class HttpReceiver(Resource):
         #pprint(request.__dict__)
 
         newdata = request.content.getvalue()
-        #print "Received POST:"
-        #print newdata
+        print "Received POST:"
+        print newdata
 
         if 'op' in request.args:
             if request.args['op'][0] == "get_table_list":
@@ -65,9 +65,9 @@ class HttpReceiver(Resource):
             if request.args['op'][0] == "add_table_data":
                 logging.info("HttpReceiver: Add table data.")
                 response_meta = { "response_op" : "ok", "identity" : Identity.get_identity() }
-                persist = True if "persist" in obj and obj["persist"] else False
                 try:
                     obj = json.loads(newdata)
+                    persist = True if "persist" in obj and obj["persist"] else False
                     self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
                 except Exception as e:
                     response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : str(e) }

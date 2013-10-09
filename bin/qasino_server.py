@@ -7,6 +7,7 @@ import logging
 from optparse import OptionParser
 
 from twisted.internet import reactor
+from twisted.internet import task
 from twisted.application.internet import TCPServer
 from twisted.application.service import Application
 from twisted.web.resource import Resource
@@ -56,6 +57,8 @@ if __name__ == "__main__":
                       help="Save database files to DIR after finished (otherwise they are deleted).", metavar="DIR")
     parser.add_option("-g", "--generation-duration", dest="generation_duration_s", default=30,
                       help="The length of a collection interval (generation) in seconds.", metavar="SECONDS")
+    parser.add_option("-v", "--views-file", dest="views_file", default='views.conf',
+                      help="A file containing a list of views to create.", metavar="FILE")
 
     (options, args) = parser.parse_args()
 
@@ -95,6 +98,25 @@ if __name__ == "__main__":
     data_manager = data_manager.DataManager(options.db_file, db_dir=options.db_dir, 
                                             signal_channel=json_publisher, archive_db_dir=options.archive_db_dir,
                                             generation_duration_s=options.generation_duration_s)
+
+    def reread_views(views_file):
+        try:
+            mtime = os.path.getmtime(views_file)
+        except:
+            return
+
+        if reread_views.last_mtime < mtime:
+            logging.info("Reading views file '%s'.", views_file)
+            reread_views.last_mtime = mtime
+            data_manager.read_views(views_file)
+
+    reread_views.last_mtime = 0
+
+    if options.views_file != None:
+        #data_manager.read_views(options.views_file)
+        reread_views_task = task.LoopingCall(reread_views, options.views_file)
+        reread_views_task.start(10.0)
+
 
     # Open a lister to receiver SQL queries.
 

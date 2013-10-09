@@ -24,13 +24,13 @@ class SqlConnections(object):
     by the data manager.
     """
 
-    def __init__(self, filename, data_manager, archive_db_dir):
+    def __init__(self, filename, data_manager, archive_db_dir, thread_id):
         self.data_manager = data_manager
         self.tables = {}
         self.connections = {}
 
         self.archive_db_dir = archive_db_dir
-        self.main_thread = thread.get_ident()
+        self.main_thread = thread_id
         self.open_new_db(filename)
 
     def open_new_db(self, filename):
@@ -69,7 +69,7 @@ class SqlConnections(object):
         try:
             dbpool.close()
         except Exception as e:
-            logging.info("SqlConnections.__del__: dbpool.close failed: %s", e)
+            logging.info("SqlConnections: dbpool.close failed in shutdown: %s", e)
 
         if filename != ':memory:':
 
@@ -234,8 +234,13 @@ class SqlConnections(object):
 
         return rowcount
 
+    def run_interaction(self, callback, *args, **kwargs):
+        """ 
+        Initiate a adbapi async interaction run a generic function, returns the deferred obj.
+        """
+        return self.dbpool.runInteraction(callback, *args, **kwargs)
 
-    def async_insert_info_table(self, db_generation_number, generation_start_epoch, generation_duration_s):
+    def insert_info_table(self, txn, db_generation_number, generation_start_epoch, generation_duration_s):
         """ 
         Adds a status table (qasino_server_info) to the database in each generation.
         """
@@ -246,10 +251,9 @@ class SqlConnections(object):
                   "rows" : [ [ str(db_generation_number), generation_duration_s, generation_start_epoch ] ]
                   }
 
-        return self.async_add_table_data(table, Identity.get_identity())
+        return self.add_table_data(txn, table, Identity.get_identity())
 
-
-    def async_insert_tables_table(self):
+    def insert_tables_table(self, txn):
         """ 
         Adds a table (qasino_server_tables) to the database with per table info.
         """
@@ -277,9 +281,9 @@ class SqlConnections(object):
                   "rows" : rows
                 }
 
-        return self.async_add_table_data(table, Identity.get_identity())
+        return self.add_table_data(txn, table, Identity.get_identity())
 
-    def async_insert_connections_table(self):
+    def insert_connections_table(self, txn):
         """ 
         Adds a table (qasino_server_connections) to the database with per table info.
         """
@@ -298,14 +302,48 @@ class SqlConnections(object):
                   "rows" : rows
                 }
 
-        return self.async_add_table_data(table, Identity.get_identity())
+        return self.add_table_data(txn, table, Identity.get_identity())
 
+    def add_views(self, txn, views):
+        """
+        Add all views to the backend.  This should not take a long time.
+        """
+        for viewname, viewdata in views.iteritems():
 
-    def async_add_table_data(self, table, identity, **kwargs):
+            logging.info("SqlConnections: Adding view '%s'", viewname)
+
+            try:
+                self.do_sql(txn, viewdata['view'])
+                viewdata['loaded'] = True
+                viewdata['error'] = ''
+            except Exception as e:
+                logging.info("SqlConnections: ERROR: Failed to add view '%s': %s", viewname, str(e))
+                viewdata['loaded'] = False
+                viewdata['error'] = str(e)
+
+    def insert_views_table(self, txn, views):
         """ 
+        Adds a table (qasino_server_connections) to the database with per table info.
+        """
+
+        rows = []
+
+        for viewname, viewdata in views.iteritems():
+            rows.append( [ viewname, str(int(viewdata['loaded'])), str(viewdata['error']), viewdata['view'] ] )
+            
+        table = { "tablename" : "qasino_server_views",
+                  "column_names" : [ "viewname", "loaded", "errormsg", "view" ],
+                  "column_types" : [ "varchar", "int", "varchar", "varchar" ],
+                  "rows" : rows
+                }
+
+        return self.add_table_data(txn, table, Identity.get_identity())
+
+    def async_add_table_data(self, table, identity, persist=False, update=False):
+        """
         Initiate a adbapi async interaction to add a table to the backend, returns the deferred obj.
         """
-        return self.dbpool.runInteraction(self.add_table_data, table, identity, **kwargs)
+        return self.dbpool.runInteraction(self.add_table_data, table, identity, persist=persist, update=update)
 
     def add_table_data(self, txn, table, identity, persist=False, update=False):
         """ 
