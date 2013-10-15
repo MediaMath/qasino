@@ -5,13 +5,13 @@ import sys
 import signal
 import logging
 from optparse import OptionParser
+import copy
 
 from twisted.internet import reactor
 from twisted.internet import task
 from twisted.application.internet import TCPServer
 from twisted.application.service import Application
-from twisted.web.resource import Resource
-from twisted.web.server import Site
+from twisted.web import server, resource, http
 from twisted.python import log
 
 for path in [
@@ -129,9 +129,12 @@ if __name__ == "__main__":
 
     logging.info("Listening for HTTP requests on port %d", constants.HTTP_PORT)
 
-    http_root = Resource()
+    http_root = resource.Resource()
     http_root.putChild("request", http_receiver.HttpReceiver(data_manager))
-    site = Site(http_root)
+
+    http.HTTPFactory.protocol = http_receiver.MyLoggingHTTPChannel
+    site = server.Site(http_root)
+
     reactor.listenTCP(constants.HTTP_PORT, site)
 
     # Create a listener for responding to json requests.

@@ -1,15 +1,25 @@
 
-from pprint import pprint
-from twisted.web.resource import Resource
-from twisted.web.server import NOT_DONE_YET
 import logging
 import json
 import re
 import time
 import sqlite3
 
+from pprint import pprint
+from twisted.web.resource import Resource
+from twisted.web.server import NOT_DONE_YET
+from twisted.web import http
+
 from util import Identity
 
+class MyLoggingHTTPChannel(http.HTTPChannel):
+    def connectionMade(self):
+        logging.info("HttpReceiver: Connection from '%s'.", str(self.transport.getPeer().host))
+        http.HTTPChannel.connectionMade(self)
+
+    def connectionLost(self, reason):
+        logging.info("HttpReceiver: Connection close '%s'.", str(self.transport.getPeer().host))
+        http.HTTPChannel.connectionLost(self, reason)
 
 class HttpReceiver(Resource):
 
@@ -52,9 +62,12 @@ class HttpReceiver(Resource):
     def render_POST(self, request):
         #pprint(request.__dict__)
 
-        newdata = request.content.getvalue()
-        print "Received POST:"
-        print newdata
+        try:
+            newdata = request.content.getvalue()
+            #print "Received POST:"
+            #print newdata
+        except Exception as e:
+            logging.info("HttpReceiver: ERROR failed to get content of POST: %s", str(e))
 
         if 'op' in request.args:
             if request.args['op'][0] == "get_table_list":
