@@ -1,6 +1,6 @@
 
 import logging
-import json
+import simplejson as json
 import re
 import time
 import sqlite3
@@ -62,37 +62,43 @@ class HttpReceiver(Resource):
     def render_POST(self, request):
         #pprint(request.__dict__)
 
+        obj = dict()
+
         try:
-            newdata = request.content.getvalue()
+            # request.content might be a temp file if the content lenght is over some threshold.
+            # fortunately json.load() will take a file ptr or a StringIO obj.
+            obj = json.load(request.content)
             #print "Received POST:"
-            #print newdata
+            #print obj
         except Exception as e:
-            logging.info("HttpReceiver: ERROR failed to get content of POST: %s", str(e))
+            logging.info("HttpReceiver: ERROR failed to get/parse content of POST: %s", str(e))
 
         if 'op' in request.args:
+
+            ## Table list op
+
             if request.args['op'][0] == "get_table_list":
                 logging.info("HttpReceiver: Got request for table list.")
                 response_meta = { "response_op" : "tables_list", "identity" : Identity.get_identity() }
                 response_data = self.data_manager.get_table_list()
                 return json.dumps(response_meta) + json.dumps(response_data)
+
+            ## Add table data op
+
             if request.args['op'][0] == "add_table_data":
                 logging.info("HttpReceiver: Add table data.")
                 response_meta = { "response_op" : "ok", "identity" : Identity.get_identity() }
                 try:
-                    obj = json.loads(newdata)
                     persist = True if "persist" in obj and obj["persist"] else False
                     self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
                 except Exception as e:
                     response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : str(e) }
                 
                 return json.dumps(response_meta)
-            if request.args['op'][0] == "query":
 
-                obj = dict()
-                try:
-                    obj = json.loads(newdata)
-                except Exception as e:
-                    response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : str(e) }
+            ## Query op
+
+            if request.args['op'][0] == "query":
 
                 if 'sql' not in obj:
                     response_meta = { "response_op" : "error", "error_message" : "Must specify 'sql' param", "identity" : Identity.get_identity() }
@@ -102,12 +108,12 @@ class HttpReceiver(Resource):
                 try:
                     self.process_sql_statement(obj["sql"], request)
                     return NOT_DONE_YET
+
                 except Exception as e:
                     logging.error('HttpReceiver: Error processing sql: %s: %s', str(e), obj["sql"])
                     response_meta = { "response_op" : "error", "error_message" : str(e), "identity" : Identity.get_identity() }
                     return json.dumps(response_meta)
-                
-                return json.dumps(result)
+
 
         response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : "Unrecognized operation" }
         return json.dumps(response_meta)
