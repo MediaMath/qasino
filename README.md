@@ -51,6 +51,71 @@ works this way.  It is by no means required.  In fact a simpler
 approach is just to have all publishers publish their data on 
 an interval that matches the generation interval.
 
+##Querying (SQL)
+
+Qasino can be queried with SQL using three different methods:
+
+###Line receiver
+
+Connect to a qasino server on port 15000 for line based text only queries.  You can 
+simply connect using telnet and send your query.
+
+    $ telnet 1.2.3.4 15000
+    Trying 1.2.3.4...
+    Connected to 1.2.3.4.
+    Escape character is '^]'.
+    select * from qasino_server_info;
+    generation_number  generation_duration_s  generation_start_epoch
+    =================  =====================  ======================
+           1382105093                     30            1382105123.1
+    1 rows returned
+
+###Python Client
+
+Connect using bin/qasino_sqlclient.py.  This client uses ZeroMQ to 
+send JSON formated messages to the server.
+
+    $ bin/qasino_sqlclient.py -H1.2.3.4
+    Connecting to 1.2.3.4:15598.
+    qasino> select * from qasino_server_info;
+    generation_number  generation_duration_s  generation_start_epoch
+    =================  =====================  ======================
+           1382119193                     30            1382119223.1
+    1 rows returned
+    qasino> 
+
+It uses a json message with the following simple format:
+
+    {
+        "op" : "query",
+        "sql" : "select * from qasino_server_info;" 
+    }
+
+
+###HTTP Interface
+
+Lastly you can connect with a simple HTTP request.  There are a couple variations.
+
+First you can POST a JSON request:
+
+    $ curl -X POST 'http://1.2.3.4:15597/request?op=query' -d '{ "sql" : "select * from qasino_server_info;" }'
+    {"table": {"rows": [["1382119553", "30", "1382119583.1"]], "column_names": ["generation_number", "generation_duration_s", "generation_start_epoch"]}, "max_widths": {"1": 21, "0": 17, "2": 22}, "response_op": "result_table", "identity": "1.2.3.4"}
+    $
+
+Or you can make a GET request with 'sql' as a query string param (be sure to url-encode it):
+
+    $ curl 'http://localhost:15597/request?op=query' --get --data-urlencode 'sql=select * from qasino_server_info;'
+    {"table": {"rows": [["1382131545", "30", "1382131575.89"]], "column_names": ["generation_number", "generation_duration_s", "generation_start_epoch"]}, "max_widths": {"1": 21, "0": 17, "2": 22}, "response_op": "result_table", "identity": "1.2.3.4"}
+
+Or make a GET request with the 'format=text' query string parameter to get a human readable rendering of the table.
+
+    $ curl 'http://1.2.3.4:15597/request?op=query&format=text' --get --data-urlencode 'sql=select * from qasino_server_info;'
+    generation_number  generation_duration_s  generation_start_epoch
+    =================  =====================  ======================
+           1382131635                     30           1382131665.89
+    1 rows returned
+    $
+
 ##Publishing
 
 Currently the only client officially implemented is a CSV file publisher.  
@@ -123,14 +188,14 @@ For example to publish the same "myapplication_table1" table you could put the f
 
 And then send the following curl:
 
-    $ curl -d @myapplication_table1.json -X POST 'http://localhost:15597/request?op=add_table_data'
-    {"identity": "8796761553395", "response_op": "ok"}
+    $ curl -d @myapplication_table1.json -X POST 'http://1.2.3.4:15597/request?op=add_table_data'
+    {"identity": "1.2.3.4", "response_op": "ok"}
     $
 
 The table should appear in Qasino.  Publishing would have to happen regularly for it to persist.
 
     $ bin/qasino_sqlclient.py
-    Connecting to localhost:15598.
+    Connecting to 1.2.3.4:15598.
     qasino> select * from qasino_server_tables where tablename = 'myapplication_table1';
                tablename
     ====================
