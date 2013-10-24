@@ -43,7 +43,10 @@ class JsonReceiver(ZmqREPConnection):
         elif obj["op"] == "add_table_data":
             #logging.info("JsonReceiver: Got request to add data.")
             persist = True if "persist" in obj and obj["persist"] else False
-            self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
+            if "static" in obj and obj["static"]:
+                self.data_manager.sql_backend_writer_static.async_add_table_data(obj["table"], obj["identity"], persist=persist, static=True)
+            else:
+                self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
             response_meta = { "response_op" : "ok", "identity" : Identity.get_identity() }
             self.reply(messageId, json.dumps(response_meta))
 

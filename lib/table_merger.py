@@ -7,7 +7,7 @@ class TableMerger(object):
         self.data_manager = data_manager
 
 
-    def merge_table(self, txn, table_to_add, existing_schema, sql_backend):
+    def merge_table(self, txn, tablename, table_to_add, existing_schema, sql_backend):
 
         # Determine if we need to merge this table.
 
@@ -32,9 +32,9 @@ class TableMerger(object):
 
             for column_name in columns_to_add:
                 column_type = column_type_lookup[column_name]
-                sql = "ALTER TABLE %s ADD COLUMN %s %s DEFAULT NULL;" % (table_to_add["tablename"], column_name, column_type)
+                sql = "ALTER TABLE %s ADD COLUMN %s %s DEFAULT NULL;" % (tablename, column_name, column_type)
 
-                logging.info("TableMerger: Altering table %s to add column %s %s", table_to_add["tablename"], column_name, column_type)
+                logging.info("TableMerger: Altering table %s to add column %s %s", tablename, column_name, column_type)
                 sql_backend.do_sql(txn, sql)
 
 

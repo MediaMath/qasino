@@ -31,7 +31,7 @@ def send_dummy_table(json_requestor, schema_version):
 
     if int(schema_version) == 0:
 
-        table = { "tablename" : "dummy",
+        table = { "tablename" : options.tablename,
                   "column_names" : [ "identity", "the", "quick", "brown", "fox" ],
                   "column_types" : [ "varchar", "int", "int", "varchar", "varchar" ],
                   "rows" : [ [ Identity.get_identity(), 34, 5, "yes", "no" ],
@@ -39,14 +39,14 @@ def send_dummy_table(json_requestor, schema_version):
                   }
 
     else:
-        table = { "tablename" : "dummy",
+        table = { "tablename" : options.tablename,
                   "column_names" : [ "identity", "the", "quick", "brown", "fox", "foo" ],
                   "column_types" : [ "varchar", "int", "int", "varchar", "varchar", "varchar" ],
                   "rows" : [ [ Identity.get_identity(), 34, 5, "yes", "no", "here I am!" ],
                              [ Identity.get_identity(), 1000, 321, "zanzabar", strftime("%Y-%m-%d %H:%M:%S GMT", gmtime()), "" ] ]
                   }
 
-    json_requestor.send_table(table, persist=options.persist)
+    json_requestor.send_table(table, persist=options.persist, static=options.static)
 
 
 if __name__ == "__main__":
@@ -60,7 +60,11 @@ if __name__ == "__main__":
     parser.add_option("-H", "--hostname", dest="hostname", default=0,
                       help="Use HOSTNAME to connect to", metavar="HOSTNAME")
     parser.add_option("-p", "--persist", dest="persist", default=False,
-                      action="store_true", help="Use HOSTNAME to connect to", metavar="HOSTNAME")
+                      action="store_true", help="Re-apply table every generation automatically on the server")
+    parser.add_option("-S", "--static", dest="static", default=False,
+                      action="store_true", help="Send table as a 'static' table on the server")
+    parser.add_option("-t", "--tablename", dest="tablename", default="dummy",
+                      help="Use TABLENAME as the table name", metavar="TABLENAME")
 
     #parser.add_option("-q", "--quiet",
     #                  action="store_false", dest="verbose", default=True,

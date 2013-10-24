@@ -2,6 +2,7 @@
 import sqlite_backend as sql_backend
 
 import table_merger
+import util
 
 import logging
 import time
@@ -26,6 +27,7 @@ class DataManager(object):
         self.generation_duration_s = generation_duration_s
         self.signal_channel = signal_channel
         self.archive_db_dir = archive_db_dir
+        self.static_db_filepath = db_dir + '/qasino_table_store_static.db'
 
         # Start with zero because we'll call rotate_dbs instantly below.
         self.db_generation_number = 0
@@ -65,7 +67,18 @@ class DataManager(object):
             db_file_name = self.db_name % self.db_generation_number
 
         self.sql_backend_reader = None
-        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, self, self.archive_db_dir, self.thread_id)
+        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, 
+                                                             self, 
+                                                             self.archive_db_dir, 
+                                                             self.thread_id, 
+                                                             self.static_db_filepath)
+
+        self.sql_backend_writer_static = sql_backend.SqlConnections(self.static_db_filepath, 
+                                                                    self, 
+                                                                    self.archive_db_dir, 
+                                                                    self.thread_id, 
+                                                                    None)
+                                                                    
 
         # Make the data manager db rotation run at fixed intervals.
         # This will also immediately make the call which will make the
@@ -196,6 +209,31 @@ class DataManager(object):
 
         return self.sql_backend_reader.tables
 
+    def insert_tables_table(self, txn, sql_backend_writer, sql_backend_writer_static):
+
+        rows = sql_backend_writer.get_tables_table_rows()
+
+        static_rows = sql_backend_writer_static.get_tables_table_rows()
+
+        for x in static_rows:
+            rows.append( x )
+
+        # the chicken or the egg - how do we add ourselves?
+
+        rows.append( [ "qasino_server_tables",
+                       len(rows) + 1,
+                       1,
+                       time.time(), 
+                       0 ] )
+
+        table = { "tablename" : "qasino_server_tables",
+                  "column_names" : [ "tablename", "nr_rows", "nr_updates", "last_update_epoch", "static" ],
+                  "column_types" : [ "varchar", "int", "int", "int", "int" ],
+                  "rows" : rows
+                }
+
+        return sql_backend_writer.add_table_data(txn, table, util.Identity.get_identity())
+        
 
     # This hack insures all the internal tables are inserted
     # using the same sql_backend_writer and makes sure that the
@@ -215,7 +253,8 @@ class DataManager(object):
         sql_backend_writer.insert_views_table(txn, views)
 
         # this should be last to include all the above tables
-        sql_backend_writer.insert_tables_table(txn)
+
+        self.insert_tables_table(txn, sql_backend_writer, self.sql_backend_writer_static)
 
     def async_rotate_dbs(self):
         """
@@ -259,7 +298,11 @@ class DataManager(object):
         if not self.one_db:
                 db_file_name = self.db_name % self.db_generation_number
 
-        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, self, self.archive_db_dir, self.thread_id)
+        self.sql_backend_writer = sql_backend.SqlConnections(db_file_name, 
+                                                             self, 
+                                                             self.archive_db_dir, 
+                                                             self.thread_id, 
+                                                             self.static_db_filepath)
 
         # Set the reader to what was the writer
         # Note the reader will (should) be deconstructed here.
@@ -279,7 +322,7 @@ class DataManager(object):
     def check_save_table(self, tablename, table, identity, persist, update):
 
         if persist:
-            self.saved_tables[tablename] = { "table" : table, "identity" : identity, "update" : True }
+            self.saved_tables[tablename] = { "table" : table, "identity" : identity, "update" : update }
 
         else:
             # Be sure to remove a table that is no longer persisting.

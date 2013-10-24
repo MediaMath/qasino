@@ -24,21 +24,38 @@ class SqlConnections(object):
     by the data manager.
     """
 
-    def __init__(self, filename, data_manager, archive_db_dir, thread_id):
+    def __init__(self, filename, data_manager, archive_db_dir, thread_id, static_filename):
         self.data_manager = data_manager
         self.tables = {}
         self.connections = {}
 
         self.archive_db_dir = archive_db_dir
         self.main_thread = thread_id
-        self.open_new_db(filename)
+        self.open_new_db(filename, static_filename)
 
-    def open_new_db(self, filename):
+    def open_new_db(self, filename, static_filename):
         self.filename = filename
+        self.static_filename = static_filename
+
         ##adbapi.noisy = True  # and add log.startLogging(sys.stdout) somewhere
+
+        # since we're using apsw which is not technically DBAPI compliant 
+        # I've created this wrapper class to make it act like one.
         adbapi.connectionFactory = apsw_connection.ApswConnection
-        self.dbpool = adbapi.ConnectionPool('apsw_connection', filename) ##, check_same_thread=False)
+
+        # if there is a static db ...
+        def attach_static_db(conn):
+            if static_filename != None and os.path.exists(static_filename):
+                cur = conn.cursor()
+                try:
+                    result = cur.execute( "ATTACH DATABASE '%s' AS static;" % static_filename)
+                except Exception as e:
+                    logging.info("SqlConnections: ERROR Failed to attach static db '%s': %s", static_filename, str(e))
+
+        self.dbpool = adbapi.ConnectionPool('apsw_connection', filename, cp_openfun=attach_static_db) ##, check_same_thread=False)
         self.dbpool.connectionFactory = apsw_connection.ApswConnection
+
+        self.dbpool.runInteraction(self.preload_tables_list)
        
 
     def __del__(self):
@@ -166,7 +183,11 @@ class SqlConnections(object):
 
         schema = []
 
-        txn.execute("pragma table_info( %s );" % table)
+        try:
+            txn.execute("pragma table_info( '%s' );" % table)
+        except Exception as e:
+            logging.info("SqlConnections: Failed to get table_info for '%s'.", table)
+            return schema
 
         for row in txn.fetchall():
             schema.append( [ str(row[1]), str(row[2]) ] )
@@ -196,9 +217,7 @@ class SqlConnections(object):
 
         return (0, '', table)
         
-    def do_update_table(self, txn, table, identity):
-
-        tablename = table["tablename"]
+    def do_update_table(self, txn, tablename, table, identity):
 
         # Use only the first row for now.
         bind_values = [ x for x in table["rows"][0] ]
@@ -214,9 +233,8 @@ class SqlConnections(object):
 
         return txn.rowcount
 
-    def do_insert_table(self, txn, table):
+    def do_insert_table(self, txn, tablename, table):
 
-        tablename = table["tablename"]
         column_str = ", ".join( table["column_names"] )
         bind_str = ", ".join( [ "?" for x in table["column_names"] ] )
 
@@ -253,11 +271,7 @@ class SqlConnections(object):
 
         return self.add_table_data(txn, table, Identity.get_identity())
 
-    def insert_tables_table(self, txn):
-        """ 
-        Adds a table (qasino_server_tables) to the database with per table info.
-        """
-
+    def get_tables_table_rows(self):
         rows = []
 
         for tablename, table_data in self.tables.items():
@@ -265,23 +279,35 @@ class SqlConnections(object):
             rows.append( [ tablename, 
                            str(table_data["nr_rows"]),
                            str(table_data["updates"]),
-                           table_data["last_update_epoch"] ] )
+                           table_data["last_update_epoch"],
+                           0 if self.static_filename != None else 1 ]
+                       )
 
-        # the chicken or the egg - how do we add ourselves?
+        return rows
 
-        rows.append( [ "qasino_server_tables",
-                       len(rows) + 1,
-                       1,
-                       time.time() ] )
+    def preload_tables_list(self, txn):
+        """ 
+        This is used upon initial open of the db to get an actual list
+        of tables from the db.
+        """
 
+        self.do_sql(txn, "SELECT tbl_name FROM sqlite_master WHERE type = 'table' and tbl_name NOT LIKE 'sqlite_%'")
 
-        table = { "tablename" : "qasino_server_tables",
-                  "column_names" : [ "tablename", "nr_rows", "nr_updates", "last_update_epoch" ],
-                  "column_types" : [ "varchar", "int", "int", "int" ],
-                  "rows" : rows
-                }
+        rows = txn.fetchall()
 
-        return self.add_table_data(txn, table, Identity.get_identity())
+        for row in rows:
+
+            tablename = row[0]
+
+            try:
+                self.do_sql(txn, "SELECT count(*) FROM %s;" % tablename)
+
+                count = txn.fetchall()
+
+                self.update_table_stats(tablename, count[0][0] if count[0][0] != None and count[0][0] > 0 else -1)
+            except:
+                logging.info("SqlConnections: Failed to get number of rows for table '%s': %s", tablename, str(e))
+                pass
 
     def insert_connections_table(self, txn):
         """ 
@@ -339,13 +365,43 @@ class SqlConnections(object):
 
         return self.add_table_data(txn, table, Identity.get_identity())
 
-    def async_add_table_data(self, table, identity, persist=False, update=False):
+    def update_table_stats(self, tablename, nr_rows, identity=Identity.get_identity(), now=time.time(), sum=False):
+
+        # Keep track of how many updates a table has received.
+
+        if tablename not in self.tables:
+            self.tables[tablename] = { "updates" : 1, 
+                                       "nr_rows" : nr_rows,
+                                       "last_update_epoch" : now }
+        else:
+            if sum:
+                self.tables[tablename]["nr_rows"] += nr_rows
+
+            self.tables[tablename]["updates"] += 1
+            self.tables[tablename]["last_update_epoch"] = now
+
+
+        # Keep track of which "identities" have added to a table.
+
+        if identity not in self.connections:
+
+            self.connections[identity] = { 'tables' : { tablename : nr_rows }, 
+                                           'last_update_epoch' : now }
+        else:
+            self.connections[identity]["last_update_epoch"] = now
+
+            if sum and tablename in self.connections[identity]["tables"]:
+                self.connections[identity]["tables"][tablename] += nr_rows
+            else:
+                self.connections[identity]["tables"][tablename] = nr_rows
+
+    def async_add_table_data(self, *args, **kwargs):
         """
         Initiate a adbapi async interaction to add a table to the backend, returns the deferred obj.
         """
-        return self.dbpool.runInteraction(self.add_table_data, table, identity, persist=persist, update=update)
+        return self.dbpool.runInteraction(self.add_table_data, *args, **kwargs)
 
-    def add_table_data(self, txn, table, identity, persist=False, update=False):
+    def add_table_data(self, txn, table, identity, persist=False, update=False, static=False):
         """ 
         Add a table to the backend if it doesn't exist and insert the data.
         This is executed using adbapi in a thread pool.
@@ -365,7 +421,7 @@ class SqlConnections(object):
         # Now check if we've already added the table.
 
         try:
-            if not update and self.connections[identity]["tables"][tablename] > 0:
+            if not update and not static and self.connections[identity]["tables"][tablename] > 0:
                 logging.info("SqlConnections: '%s' has already sent an update for table '%s'", identity, tablename)
                 return
             else:
@@ -386,7 +442,9 @@ class SqlConnections(object):
 
             # Use this to detect if the table already exists - we
             # could just not do this and use the create table to
-            # detect if a table is already there or not...
+            # detect if a table is already there or not but a error on
+            # the create table would mean having to restart the
+            # transaction and require some weird retry logic..
 
             schema = self.get_schema(txn, tablename)
 
@@ -432,14 +490,21 @@ class SqlConnections(object):
             # If we were not first and didn't create the table we need to check for merge.
 
             if not did_create:
-                self.data_manager.table_merger.merge_table(txn, table, schema, self)
+                self.data_manager.table_merger.merge_table(txn, tablename, table, schema, self)
 
-            # Now update the table - call do_update if this is an update type and we didn't create the initial table.
+            # Now update the table.
+            # Truncate and re-insert if this is static.
+            # Call do_update if this is an update type and we didn't create the initial table.
 
-            if update and not did_create:
-                rowcount = self.do_update_table(txn, table, identity)
+            if static and not did_create:
+                txn.execute("DELETE FROM %s;" % tablename)
+                rowcount = self.do_insert_table(txn, tablename, table)
+
             else:
-                rowcount = self.do_insert_table(txn, table)
+                if update and not did_create:
+                    rowcount = self.do_update_table(txn, tablename, table, identity)
+                else:
+                    rowcount = self.do_insert_table(txn, tablename, table)
 
             txn.execute("COMMIT;")
 
@@ -456,7 +521,7 @@ class SqlConnections(object):
                 return 0
 
             # Place this request back on the event queue for a retry.
-            self.async_add_table_data(table, identity, persist=persist, update=update)
+            self.async_add_table_data(table, identity, persist=persist, update=update, static=static)
 
             return 0
 
@@ -472,7 +537,7 @@ class SqlConnections(object):
                 return 0
 
             # Place this request back on the event queue for a retry.
-            self.async_add_table_data(table, identity, persist=persist, update=update)
+            self.async_add_table_data(table, identity, persist=persist, update=update, static=static)
 
             return 0
 
@@ -487,32 +552,11 @@ class SqlConnections(object):
 
         nr_rows = len(table["rows"])
 
-        # Keep track of how many updates a table has received.
+        # Update some informational stats used for making the tables
+        # and connections tables.
 
-        if tablename not in self.tables:
-            self.tables[tablename] = { "updates" : 1, 
-                                       "nr_rows" : rowcount,
-                                       "last_update_epoch" : now }
-        else:
-            if not update:
-                self.tables[tablename]["nr_rows"] += rowcount
-
-            self.tables[tablename]["updates"] += 1
-            self.tables[tablename]["last_update_epoch"] = now
-
-        # Keep track of which "identities" have added to a table.
-
-        if identity not in self.connections:
-
-            self.connections[identity] = { 'tables' : { tablename : rowcount }, 
-                                           'last_update_epoch' : now }
-        else:
-            self.connections[identity]["last_update_epoch"] = now
-
-            if tablename not in self.connections[identity]["tables"]:
-                self.connections[identity]["tables"][tablename] = rowcount
-            elif not update:
-                self.connections[identity]["tables"][tablename] += rowcount
+        self.update_table_stats(tablename, rowcount, identity=identity,
+                                sum=not update and not static, now=now)
             
         return 1
 

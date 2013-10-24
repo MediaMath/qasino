@@ -25,12 +25,15 @@ class JsonRequestor(ZmqREQConnection):
         deferred = self.sendMsg(json.dumps(msg))
         deferred.callback = self.message_received
 
-    def send_table(self, table, persist=None, identity=None):
+    def send_table(self, table, persist=None, identity=None, static=None):
         if not identity:
             identity = Identity.get_identity()
         msg = { "op" : "add_table_data",  "identity" : identity }
         if persist:
             msg["persist"] = persist
+
+        if static:
+            msg["static"] = static
 
         #logging.info("JsonRequestor: Sending table '%s'", table["tablename"])
         msg["table"] = table

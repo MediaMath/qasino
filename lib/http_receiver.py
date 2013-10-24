@@ -119,6 +119,9 @@ class HttpReceiver(Resource):
             #print obj
         except Exception as e:
             logging.info("HttpReceiver: ERROR failed to get/parse content of POST: %s", str(e))
+            response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "Could not parse POST body: %s" % str(e) }
+            return json.dumps(response_meta)
+
 
         if 'op' in request.args:
 
@@ -137,7 +140,10 @@ class HttpReceiver(Resource):
                 response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
                 try:
                     persist = True if "persist" in obj and obj["persist"] else False
-                    self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
+                    if "static" in obj and obj["static"]:
+                        self.data_manager.sql_backend_writer_static.async_add_table_data(obj["table"], obj["identity"], persist=persist, static=True)
+                    else:
+                        self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
                 except Exception as e:
                     response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
                 
