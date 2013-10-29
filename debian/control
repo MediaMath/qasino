@@ -10,8 +10,8 @@ Standards-Version: 3.9.1
 
 Package: qasino
 Architecture: all
-Depends: ${misc:Depends}, ${python:Depends}, python (>= 2.7), python-twisted, python-zmq, python-simplejson, python-httplib2, python-apsw
+Depends: ${misc:Depends}, ${python:Depends}, python (>= 2.7), python-twisted, python-zmq, python-simplejson, python-httplib2, python-apsw, python-yaml
 Description: Collect statistics and store them in a database
- Qasino is a system for collecting and storiing snapshot statistics
+ Qasino is a system for collecting and storing snapshot statistics
  in a sqlite database.
 
