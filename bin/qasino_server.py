@@ -13,6 +13,7 @@ from twisted.application.internet import TCPServer
 from twisted.application.service import Application
 from twisted.web import server, resource, http
 from twisted.python import log
+from OpenSSL import SSL
 
 for path in [
     os.path.join('opt', 'qasino', 'lib'),
@@ -136,6 +137,24 @@ if __name__ == "__main__":
     site = server.Site(http_root)
 
     reactor.listenTCP(constants.HTTP_PORT, site)
+
+    logging.info("Listening for HTTPS requests on port %d", constants.HTTPS_PORT)
+
+    class ServerContextFactory:
+        def getContext(self):
+            """
+            Create an SSL context.
+            """
+            ctx = SSL.Context(SSL.SSLv23_METHOD)
+            ctx.use_certificate_file('server.crt')
+            ctx.use_privatekey_file('server.key')
+            ctx.use_certificate_chain_file('server-ca.crt')
+            return ctx
+
+    try:
+        reactor.listenSSL(constants.HTTPS_PORT, site, ServerContextFactory())
+    except Exception as e:
+        logging.info("Failed to listen on SSL port %d, continuing anyway (%s).", constants.HTTPS_PORT, str(e))
 
     # Create a listener for responding to json requests.
 
