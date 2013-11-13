@@ -3,6 +3,9 @@ import socket
 import fcntl
 import struct
 import uuid
+import random
+
+import qasino_table
 
 class Identity(object):
     identity = 'unidentified'
@@ -135,3 +138,17 @@ def pretty_print_table(outputter, table, max_widths=None, column_delim="  "):
     # Now number of rows
 
     outputter.sendLine("%d rows returned" % nr_rows)
+
+
+
+def random_string(start, stop):
+    string = ""
+    sizeof_string = random.randint(start, stop + 1)
+    for x in range(sizeof_string):
+        pick_a_char_index = random.randint(0, len(random_string.alphabet) - 1)
+        string += random_string.alphabet[pick_a_char_index]
+    return string
+
+random_string.alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+

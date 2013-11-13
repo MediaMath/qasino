@@ -6,6 +6,7 @@ import time
 import sqlite3
 
 from util import Identity
+import qasino_table
 
 class JsonReceiver(ZmqREPConnection):
 
@@ -42,11 +43,12 @@ class JsonReceiver(ZmqREPConnection):
 
         elif obj["op"] == "add_table_data":
             #logging.info("JsonReceiver: Got request to add data.")
-            persist = True if "persist" in obj and obj["persist"] else False
-            if "static" in obj and obj["static"]:
-                self.data_manager.sql_backend_writer_static.async_add_table_data(obj["table"], obj["identity"], persist=persist, static=True)
+            table = qasino_table.QasinoTable()
+            table.from_obj(obj)
+            if table.get_property("static"):
+                self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
             else:
-                self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
+                self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
             response_meta = { "response_op" : "ok", "identity" : Identity.get_identity() }
             self.reply(messageId, json.dumps(response_meta))
 

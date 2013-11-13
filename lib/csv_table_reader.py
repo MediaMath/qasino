@@ -1,23 +1,39 @@
 
 import sys
 import csv
+import re
 
 import logging
+
+import qasino_table
 
 class CsvTableReader(object):
 
     csv_to_qasino_type_map = { 'str' : 'TEXT',
                                'string' : 'TEXT',
                                'ip' : 'TEXT',
+                               'float' : 'REAL',
                                'int' : 'INTEGER',
                                'integer' : 'INTEGER',
                                'll' : 'INTEGER',
                                'time' : 'INTEGER'
                                }
 
+    def istrue(self, str):
+        if str == None:
+            return False
+
+        m = re.search(r'^(false|no|0)$', str, flags=re.IGNORECASE)
+        if m != None:
+            return False
+
+        return True
+
+
     def read_table(self, filename, tablename, 
                    colnames_lineno=1,
                    types_lineno=2,
+                   options_lineno=-1,
                    skip_linenos=set()):
 
         # Open the file.
@@ -28,9 +44,10 @@ class CsvTableReader(object):
             logging.error("Failed to open file '%s': %s", filename, e)
             return (None, str(e))
     
+        table = qasino_table.QasinoTable(tablename)
+
         column_names = None
         column_types = None
-        output_rows = list()
     
         try:
             for lineno, line in enumerate(file):
@@ -40,7 +57,30 @@ class CsvTableReader(object):
                 if lineno in skip_linenos:
                     continue
 
-                elif types_lineno and types_lineno == lineno:
+                elif options_lineno != None and options_lineno == lineno:
+
+                    try:
+                        parsed = csv.reader( [ line ] ).next()
+
+                        for option_pair in parsed:
+
+                            # If its a name value pair, its an option (otherwise its just a version number which we ignore)
+
+                            m = re.search(r'^(\S+)=(\S+)$', option_pair, flags=re.IGNORECASE)
+                            if m != None:
+                                if m.group(1) == 'static' and self.istrue(m.group(2)):
+                                    table.set_property('static', 1)
+                                elif m.group(1) == 'update' and self.istrue(m.group(2)):
+                                    table.set_property('update', 1)
+                                elif m.group(1) == 'persist' and self.istrue(m.group(2)):
+                                    table.set_property('persist', 1)
+                                elif m.group(1) == 'keycols':
+                                    table.set_property('keycols', m.group(2))
+
+                    except Exception as inst:
+                        raise Exception("Unable to parse options: %s" % (lineno, inst))
+
+                elif types_lineno != None and types_lineno == lineno:
 
                     try:
                         parsed = csv.reader( [ line ] ).next()
@@ -48,16 +88,20 @@ class CsvTableReader(object):
                     except Exception as inst:
                         raise Exception("Unsupported type in type list '%s' or parse error" % inst)
     
-                    if column_names and len(column_names) != len(column_types):
+                    if column_names != None and len(column_names) != len(column_types):
                         raise Exception("Number of type names does not match number of column names! (line %d)" % lineno)
 
-                elif colnames_lineno and colnames_lineno == lineno:
+                    table.set_column_types(column_types)
+
+                elif colnames_lineno != None and colnames_lineno == lineno:
 
                     column_names = csv.reader( [ line ] ).next()
                 
-                    if column_types and len(column_names) != len(column_types):
+                    if column_types != None and len(column_names) != len(column_types):
                         raise Exception("Number of column names does not match number of column types! (line %d)" % lineno)
     
+                    table.set_column_names(column_names)
+
                 # Data
                 else:
 
@@ -88,7 +132,8 @@ class CsvTableReader(object):
                         except:
                             raise Exception("Parse error on line %d" % lineno)
     
-                    output_rows.append(output_row)
+                    if table.add_row(output_row) == -1:
+                        raise Exception("Wrong number of rows on line %d: '%s'" % (lineno, line))
     
                 # END if .. else .. 
 
@@ -99,8 +144,7 @@ class CsvTableReader(object):
             logging.error('Csv read error on line %d: %s', lineno, inst)
             return (None, str(inst))
 
-        return ( { "tablename" : tablename,
-                   "column_names" : column_names,
-                   "column_types" : column_types,
-                   "rows" : output_rows 
-                 }, None )
+        table.set_column_names(column_names)
+        table.set_column_types(column_types)
+
+        return ( table, None )

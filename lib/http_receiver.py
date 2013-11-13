@@ -11,6 +11,7 @@ from twisted.web.server import NOT_DONE_YET
 from twisted.web import http
 
 import util
+import qasino_table
 
 class MyLoggingHTTPChannel(http.HTTPChannel):
     def connectionMade(self):
@@ -37,7 +38,7 @@ class HttpReceiver(Resource):
 
                 if 'name' in request.args and 'value' in request.args:
                     
-                    identity = request.args['identity'][0] if 'identity' in request.args else 'foo'
+                    identity = request.args['identity'][0] if 'identity' in request.args else 'unknown'
                     
                     # Parse the name into '<tablename>.<column>'
                     
@@ -52,12 +53,14 @@ class HttpReceiver(Resource):
                     columnname = m.group(2)
                     value = request.args['value'][0]
 
-                    table = { 'tablename' : tablename, 
-                              'column_names' : [ 'identity', columnname ],
-                              'column_types' : [ 'varchar', 'varchar' ],
-                              'rows' : [ [ identity, value ] ]
-                            }
-                    self.data_manager.sql_backend_writer.async_add_table_data(table, identity, persist=True, update=True)
+                    table = qasino_table.QasinoTable(tablename)
+                    table.add_column('identity', 'varchar')
+                    table.add_column(columnname, 'varchar')
+                    table.add_row( [ identity, value ] )
+                    table.set_property('update', 1)
+                    table.set_property('persist', 1)
+
+                    self.data_manager.sql_backend_writer.async_add_table_data(table, identity)
 
             ## Query op
 
@@ -137,13 +140,14 @@ class HttpReceiver(Resource):
 
             if request.args['op'][0] == "add_table_data":
                 logging.info("HttpReceiver: Add table data.")
+                table = qasino_table.QasinoTable()
+                table.from_obj(obj)
                 response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
                 try:
-                    persist = True if "persist" in obj and obj["persist"] else False
-                    if "static" in obj and obj["static"]:
-                        self.data_manager.sql_backend_writer_static.async_add_table_data(obj["table"], obj["identity"], persist=persist, static=True)
+                    if table.get_property("static"):
+                        self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
                     else:
-                        self.data_manager.sql_backend_writer.async_add_table_data(obj["table"], obj["identity"], persist=persist)
+                        self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
                 except Exception as e:
                     response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
                 

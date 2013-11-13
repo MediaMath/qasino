@@ -2,8 +2,6 @@
 
 import os
 import sys
-from time import strftime, gmtime
-import random
 
 import logging
 
@@ -22,46 +20,10 @@ for path in [
         sys.path.append(path)
         break
 
-from util import Identity
+import util
 import constants
 import json_requestor
-
-
-
-def random_string(start, stop):
-    string = ""
-    sizeof_string = random.randint(start, stop + 1)
-    for x in range(sizeof_string):
-        pick_a_char_index = random.randint(0, len(random_string.alphabet) - 1)
-        string += random_string.alphabet[pick_a_char_index]
-    return string
-
-random_string.alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-def get_a_random_table():
-
-    type_array = [ "TEXT", "INTEGER" ]
-
-    nr_columns = random.randint(1, 20)
-    column_names = [ random_string(1, 40) for _ in range(nr_columns) ]
-    column_types = [ type_array[ random.randint(0, len(type_array) - 1) ] for _ in range(nr_columns) ]
-
-    rows = []
-    for row_index in range(random.randint(1, 300)):
-        row = []
-        for column_index in range(nr_columns):
-            if column_types[column_index] == "TEXT":
-                row.append(random_string(1, 50))
-            else:
-                row.append(random.randint(0, 3483839392))
-        rows.append(row)
-
-    table = { "tablename" : random_string(4, 20),
-              "column_names" : column_names,
-              "column_types" : column_types,
-              "rows" : rows
-              }
-    return table
+import qasino_table
 
 
 if __name__ == "__main__":
@@ -84,7 +46,7 @@ if __name__ == "__main__":
     (options, args) = parser.parse_args()
 
     if options.identity != None:
-        Identity.set_identity(options.identity)
+        util.Identity.set_identity(options.identity)
 
     logging.basicConfig(format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S",
                         level=logging.INFO)
@@ -94,9 +56,10 @@ if __name__ == "__main__":
     json_requestor = json_requestor.JsonRequestor(options.hostname, constants.JSON_RPC_PORT, zmq_factory)
 
     for x in range(int(options.nr_tables)):
-        logging.info("Sending random table on port %d", constants.JSON_RPC_PORT)
 
-        table = get_a_random_table()
+        table = qasino_table.get_a_random_table()
+
+        logging.info("Sending random table of %d rows on port %d", table.get_nr_rows(), constants.JSON_RPC_PORT)
 
         json_requestor.send_table(table)
 

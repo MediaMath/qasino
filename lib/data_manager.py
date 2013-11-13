@@ -3,6 +3,7 @@ import sqlite_backend as sql_backend
 
 import table_merger
 import util
+import qasino_table
 
 import logging
 import time
@@ -211,26 +212,24 @@ class DataManager(object):
 
     def insert_tables_table(self, txn, sql_backend_writer, sql_backend_writer_static):
 
-        rows = sql_backend_writer.get_tables_table_rows()
+        table = qasino_table.QasinoTable("qasino_server_tables")
+        table.add_column("tablename",         "varchar")
+        table.add_column("nr_rows",           "int")
+        table.add_column("nr_updates",        "int")
+        table.add_column("last_update_epoch", "int")
+        table.add_column("static",            "int")
 
-        static_rows = sql_backend_writer_static.get_tables_table_rows()
+        sql_backend_writer.add_tables_table_rows(table)
 
-        for x in static_rows:
-            rows.append( x )
+        sql_backend_writer_static.add_tables_table_rows(table)
 
         # the chicken or the egg - how do we add ourselves?
 
-        rows.append( [ "qasino_server_tables",
-                       len(rows) + 1,
-                       1,
-                       time.time(), 
-                       0 ] )
-
-        table = { "tablename" : "qasino_server_tables",
-                  "column_names" : [ "tablename", "nr_rows", "nr_updates", "last_update_epoch", "static" ],
-                  "column_types" : [ "varchar", "int", "int", "int", "int" ],
-                  "rows" : rows
-                }
+        table.add_row( [ "qasino_server_tables",
+                         table.get_nr_rows() + 1,
+                         1,
+                         time.time(), 
+                         0 ] )
 
         return sql_backend_writer.add_table_data(txn, table, util.Identity.get_identity())
         
@@ -319,10 +318,12 @@ class DataManager(object):
             self.signal_channel.send_generation_signal(self.db_generation_number, self.generation_duration_s)
 
 
-    def check_save_table(self, tablename, table, identity, persist, update):
+    def check_save_table(self, table, identity):
 
-        if persist:
-            self.saved_tables[tablename] = { "table" : table, "identity" : identity, "update" : update }
+        tablename = table.get_tablename()
+
+        if table.get_property('persist'):
+            self.saved_tables[tablename] = { "table" : table, "identity" : identity }
 
         else:
             # Be sure to remove a table that is no longer persisting.
@@ -336,6 +337,4 @@ class DataManager(object):
 
             logging.info("DataManager: Adding saved table '%s' from '%s'", tablename, table_data["identity"])
 
-            update = True if "update" in table_data and table_data["update"] else False
-
-            self.sql_backend_writer.async_add_table_data(table_data["table"], table_data["identity"], persist=True, update=update)
+            self.sql_backend_writer.async_add_table_data(table_data["table"], table_data["identity"])

@@ -4,9 +4,11 @@ import sqlite3
 import re
 import logging
 import time
+import string
 
 from util import Identity
 import apsw_connection
+import qasino_table
 
 import apsw
 from twisted.enterprise import adbapi
@@ -197,12 +199,7 @@ class SqlConnections(object):
 
     def do_sql(self, txn, sql):
         """ Execute generic sql """
-
-        result = None
-
-        result = txn.execute(sql)
-
-        return result
+        return txn.execute(sql)
 
 
     def do_desc(self, txn, tablename):
@@ -217,36 +214,71 @@ class SqlConnections(object):
 
         return (0, '', table)
         
-    def do_update_table(self, txn, tablename, table, identity):
+    def do_update_table(self, txn, table, identity):
 
-        # Use only the first row for now.
-        bind_values = [ x for x in table["rows"][0] ]
+        key_cols_str = table.get_property('keycols')
 
-        # Make <column_name1>=?, <column_name2>=?, ...
-        set_pairs = "=?, ".join( table["column_names"] ) + "=?"
+        if key_cols_str == None:
 
-        sql = "UPDATE %s SET %s WHERE identity=?" % (tablename, set_pairs)
+            # Make <column_name1>=?, <column_name2>=?, ...
+            set_pairs = "=?, ".join( table.get_column_names() ) + "=?"
 
-        bind_values.append(identity)
+            sql = "UPDATE %s SET %s WHERE identity=?" % (table.get_tablename(), set_pairs)
 
-        txn.execute(sql, bind_values)
+            # Use only the first row for now.
+            bind_values = [ x for x in table.get_row(0) ]
+            bind_values.append(identity)
 
-        return txn.rowcount
+            txn.execute(sql, bind_values)
 
-    def do_insert_table(self, txn, tablename, table):
+            return txn.getconnection().changes()
+        else:
 
-        column_str = ", ".join( table["column_names"] )
-        bind_str = ", ".join( [ "?" for x in table["column_names"] ] )
+            key_column_names = string.split(key_cols_str, ';')
+            column_names = table.get_column_names()
+            
+            tablename = table.get_tablename()
+            index_name = tablename + "_unique_index_" + '_'.join(key_column_names)
+
+            create_index_sql = "CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s)" % (index_name, tablename, ', '.join(key_column_names))
+            #logging.info("DEBUG: would execute: %s", create_index_sql)
+            txn.execute(create_index_sql)
+
+            try:
+                txn.execute(create_index_sql)
+            except Exception as e:
+                logging.info("ERROR: Failed to create unique index for table update: '%s': ( %s )", str(e), create_index_sql)
+                return
+
+            sql = "INSERT OR REPLACE INTO %s (%s) VALUES (%s)" % (tablename, ', '.join(column_names), ', '.join([ '?' for x in column_names ]) )
+
+            rowcount = 0
+
+            for row in table.get_rows():
+
+                #logging.info("DEBUG: would execute: %s with %s", sql, row)
+                txn.execute(sql, row)
+
+                rowcount += txn.getconnection().changes()
+
+            return rowcount
+
+    def do_insert_table(self, txn, table):
+
+        column_str = ", ".join( table.get_column_names() )
+        bind_str = ", ".join( [ "?" for x in table.get_column_names() ] )
 
         sql = ''
 
         rowcount = 0
 
-        for row_index, row in enumerate(table["rows"]):
+        # TODO: make this more efficient
 
-            sql = "INSERT INTO %s ( %s ) VALUES ( %s )" % (tablename, column_str, bind_str)
+        for row_index, row in enumerate(table.get_rows()):
 
-            txn.execute(sql, row )
+            sql = "INSERT INTO %s ( %s ) VALUES ( %s )" % (table.get_tablename(), column_str, bind_str)
+
+            txn.execute(sql, row)
 
             rowcount += 1
 
@@ -262,28 +294,25 @@ class SqlConnections(object):
         """ 
         Adds a status table (qasino_server_info) to the database in each generation.
         """
+        table = qasino_table.QasinoTable("qasino_server_info")
+        table.add_column("generation_number",      "int")
+        table.add_column("generation_duration_s",  "int")
+        table.add_column("generation_start_epoch", "int")
 
-        table = { "tablename" : "qasino_server_info",
-                  "column_names" : [ "generation_number", "generation_duration_s", "generation_start_epoch" ],
-                  "column_types" : [ "int", "int", "int" ],
-                  "rows" : [ [ str(db_generation_number), generation_duration_s, generation_start_epoch ] ]
-                  }
+        table.add_row( [ str(db_generation_number), generation_duration_s, generation_start_epoch ] )
 
         return self.add_table_data(txn, table, Identity.get_identity())
 
-    def get_tables_table_rows(self):
-        rows = []
+    def add_tables_table_rows(self, table):
 
         for tablename, table_data in self.tables.items():
             
-            rows.append( [ tablename, 
-                           str(table_data["nr_rows"]),
-                           str(table_data["updates"]),
-                           table_data["last_update_epoch"],
-                           0 if self.static_filename != None else 1 ]
-                       )
-
-        return rows
+            table.add_row( [ tablename, 
+                             str(table_data["nr_rows"]),
+                             str(table_data["updates"]),
+                             table_data["last_update_epoch"],
+                             0 if self.static_filename != None else 1 ]
+                           )
 
     def preload_tables_list(self, txn):
         """ 
@@ -314,19 +343,16 @@ class SqlConnections(object):
         Adds a table (qasino_server_connections) to the database with per table info.
         """
 
-        rows = []
+        table = qasino_table.QasinoTable("qasino_server_connections")
+        table.add_column("identity",          "varchar")
+        table.add_column("nr_tables",         "int")
+        table.add_column("last_update_epoch", "int")
 
         for connection, connection_data in self.connections.items():
             
-            rows.append( [ connection, # identity
-                           str(len(connection_data["tables"])),
-                           connection_data["last_update_epoch"] ] )
-
-        table = { "tablename" : "qasino_server_connections",
-                  "column_names" : [ "identity", "nr_tables", "last_update_epoch" ],
-                  "column_types" : [ "varchar", "int", "int" ],
-                  "rows" : rows
-                }
+            table.add_row( [ connection, # identity
+                             str(len(connection_data["tables"])),
+                             connection_data["last_update_epoch"] ] )
 
         return self.add_table_data(txn, table, Identity.get_identity())
 
@@ -352,16 +378,14 @@ class SqlConnections(object):
         Adds a table (qasino_server_connections) to the database with per table info.
         """
 
-        rows = []
+        table = qasino_table.QasinoTable("qasino_server_views")
+        table.add_column("viewname", "varchar")
+        table.add_column("loaded",   "int")
+        table.add_column("errormsg", "varchar")
+        table.add_column("view",     "varchar")
 
         for viewname, viewdata in views.iteritems():
-            rows.append( [ viewname, str(int(viewdata['loaded'])), str(viewdata['error']), viewdata['view'] ] )
-            
-        table = { "tablename" : "qasino_server_views",
-                  "column_names" : [ "viewname", "loaded", "errormsg", "view" ],
-                  "column_types" : [ "varchar", "int", "varchar", "varchar" ],
-                  "rows" : rows
-                }
+            table.add_row( [ viewname, str(int(viewdata['loaded'])), str(viewdata['error']), viewdata['view'] ] )
 
         return self.add_table_data(txn, table, Identity.get_identity())
 
@@ -401,7 +425,7 @@ class SqlConnections(object):
         """
         return self.dbpool.runInteraction(self.add_table_data, *args, **kwargs)
 
-    def add_table_data(self, txn, table, identity, persist=False, update=False, static=False):
+    def add_table_data(self, txn, table, identity):
         """ 
         Add a table to the backend if it doesn't exist and insert the data.
         This is executed using adbapi in a thread pool.
@@ -409,14 +433,22 @@ class SqlConnections(object):
 
         # For when we hit lock contention - only retry so many times.
 
-        if "retry_count" not in table:
-            table["retry_count"] = 5
+        table.init_retry(5)
 
-        tablename = table["tablename"]
+        tablename = table.get_tablename()
+
+        update = table.get_property('update')
+        static = table.get_property('static')
+        persist = table.get_property('persist')
+
+        properties_str = ''
+        if static: properties_str += ' static'
+        if update: properties_str += ' update'
+        if persist: properties_str += ' persist'
 
         # Check if we need to save the table in case of persistence.
 
-        self.data_manager.check_save_table(tablename, table, identity, persist, update)
+        self.data_manager.check_save_table(table, identity)
 
         # Now check if we've already added the table.
 
@@ -424,16 +456,12 @@ class SqlConnections(object):
             if not update and not static and self.connections[identity]["tables"][tablename] > 0:
                 logging.info("SqlConnections: '%s' has already sent an update for table '%s'", identity, tablename)
                 return
-            else:
-                logging.info("SqlConnections: Update for table '%s' from '%s'", tablename, identity)
         except KeyError:
             # Ignore
             pass
+
+        logging.info("SqlConnections:%s update for table '%s' from '%s'", properties_str, tablename, identity)
             
-        # Do we need to create the table in the db?
-
-        did_create = False
-
         try:
             # Wrap the create, alter tables and inserts or updates in
             # a transaction... All or none please.
@@ -446,65 +474,53 @@ class SqlConnections(object):
             # the create table would mean having to restart the
             # transaction and require some weird retry logic..
 
+            create_sql = "CREATE TABLE IF NOT EXISTS %s ( \n" % tablename
+
+            columns = []
+            
+            for column_name, column_type in table.zip_columns():
+                columns.append( "%s %s DEFAULT NULL" % (column_name, column_type) )
+
+            create_sql += ",\n".join( columns )
+
+            create_sql += ")"
+
+            try:
+                result = self.do_sql(txn, create_sql)
+            except Exception as e:
+                errorstr = str(e)
+
+                # Is this a "table already exists" error?  Then its a race condition between checking if a table exists and actually creating it.
+                # This should never happen now - we are using CREATE IF NOT EXISTS ...
+                if "already exists" in errorstr:
+                    # Don't need to log this as it is fairly common.
+                    ##logging.info("SqlConnections: Warning: Create table race condition '%s' for %s: '%s' ... retrying", tablename, identity, errorstr)
+                    raise CreateTableException("Create table race condition '%s' for %s: '%s'" % (tablename, identity, errorstr,))
+                
+                else:
+                    # Otherwise some kind of sql error, pass the exception up
+                    raise e
+
+
+            # Merge the schemas of what might be already there and our update.
             schema = self.get_schema(txn, tablename)
 
-            # Do we need to create the table?
-
-            if schema == None or len(schema) <= 0:
-
-                create_sql = "CREATE TABLE %s ( \n" % tablename
-
-                columns = []
-            
-                for column_name, column_type in zip(table["column_names"], table["column_types"]):
-                    columns.append( "%s %s DEFAULT NULL" % (column_name, column_type) )
-
-                create_sql += ",\n".join( columns )
-
-                create_sql += ")"
-
-                logging.info("SqlConnections: Creating table '%s' from '%s'", tablename, identity)
-
-                try:
-                    result = self.do_sql(txn, create_sql)
-                except Exception as e:
-                    errorstr = str(e)
-
-                    # Is this a "table already exists" error?  Then its a race condition between checking if a table exists and actually creating it.
-                    if "already exists" in errorstr:
-                        # Don't need to log this as it is fairly common.
-                        ##logging.info("SqlConnections: Warning: Create table race condition '%s' for %s: '%s' ... retrying", tablename, identity, errorstr)
-                        raise CreateTableException("Create table race condition '%s' for %s: '%s'" % (tablename, identity, errorstr,))
-
-                    else:
-                        # Otherwise some kind of sql error, pass the exception up
-                        raise e
-
-                if result != None:
-                    did_create = True
-
-            else:
-                logging.info("SqlConnections: Adding to table '%s' from '%s'", tablename, identity)
-
-
-            # If we were not first and didn't create the table we need to check for merge.
-
-            if not did_create:
-                self.data_manager.table_merger.merge_table(txn, tablename, table, schema, self)
+            self.data_manager.table_merger.merge_table(txn, table, schema, self)
 
             # Now update the table.
             # Truncate and re-insert if this is static.
-            # Call do_update if this is an update type and we didn't create the initial table.
+            # Call do_update if this is an update type.
+            # Otherwise we insert.
 
-            if static and not did_create:
+            if static:
                 txn.execute("DELETE FROM %s;" % tablename)
-                rowcount = self.do_insert_table(txn, tablename, table)
+                rowcount = self.do_insert_table(txn, table)
 
             else:
-                if update and not did_create:
-                    rowcount = self.do_update_table(txn, tablename, table, identity)
+                if update:
+                    rowcount = self.do_update_table(txn, table, identity)
                 else:
-                    rowcount = self.do_insert_table(txn, tablename, table)
+                    rowcount = self.do_insert_table(txn, table)
 
             txn.execute("COMMIT;")
 
@@ -515,13 +531,12 @@ class SqlConnections(object):
             txn.execute("ROLLBACK;")
 
             # Should we try again?
-            table["retry_count"] -= 1 
-            if table["retry_count"] <= 0:
+            if table.test_retry():
                 logging.info("SqlConnections: ERROR: Retries failed for table '%s'", tablename)
                 return 0
 
             # Place this request back on the event queue for a retry.
-            self.async_add_table_data(table, identity, persist=persist, update=update, static=static)
+            self.async_add_table_data(table, identity)
 
             return 0
 
@@ -531,13 +546,12 @@ class SqlConnections(object):
             txn.execute("ROLLBACK;")
 
             # Should we try again?
-            table["retry_count"] -= 1 
-            if table["retry_count"] <= 0:
+            if table.test_retry():
                 logging.info("SqlConnections: ERROR: Retries failed for table '%s'", tablename)
                 return 0
 
             # Place this request back on the event queue for a retry.
-            self.async_add_table_data(table, identity, persist=persist, update=update, static=static)
+            self.async_add_table_data(table, identity)
 
             return 0
 
@@ -550,7 +564,7 @@ class SqlConnections(object):
 
         now = time.time()
 
-        nr_rows = len(table["rows"])
+        nr_rows = table.get_nr_rows()
 
         # Update some informational stats used for making the tables
         # and connections tables.

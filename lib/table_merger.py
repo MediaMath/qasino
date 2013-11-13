@@ -7,13 +7,15 @@ class TableMerger(object):
         self.data_manager = data_manager
 
 
-    def merge_table(self, txn, tablename, table_to_add, existing_schema, sql_backend):
+    def merge_table(self, txn, table_to_add, existing_schema, sql_backend):
 
         # Determine if we need to merge this table.
 
+        tablename = table_to_add.get_tablename()
+
         # Make some sets
 
-        table_to_add_columns = set( table_to_add["column_names"] )
+        table_to_add_columns = set( table_to_add.get_column_names() )
         existing_columns = set( [ row[0] for row in existing_schema ] )
 
         # Find discrepancies between table and existing schema.
@@ -28,7 +30,7 @@ class TableMerger(object):
             # Try to add the missing columns to the table.
 
             column_type_lookup = { column_name : column_type 
-                                   for column_name, column_type in zip(table_to_add["column_names"], table_to_add["column_types"]) }
+                                   for column_name, column_type in table_to_add.zip_columns() }
 
             for column_name in columns_to_add:
                 column_type = column_type_lookup[column_name]

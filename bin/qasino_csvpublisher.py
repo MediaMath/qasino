@@ -29,6 +29,7 @@ import json_requestor
 import json_subscriber
 import constants
 from util import Identity
+import qasino_table
 
 
 def get_csv_files_from_index(index_file):
@@ -238,7 +239,7 @@ def read_and_send_tables(json_requestor, options):
 
             # The csv files we'll be reading in will have this format:
             # ------------------------
-            # version
+            # version/options
             # tablename
             # column names (csv)
             # column types (csv)
@@ -254,9 +255,10 @@ def read_and_send_tables(json_requestor, options):
             table_info[tablename]["error_msg"] = ''
             table_info[tablename]["read_epoch"] = time.time()
 
-            # Ignore the 1st, 2nd and 5th lines.  Names in 3rd, types in 4th.
+            # Ignore the 2nd and 5th lines.  Names in 3rd, types in 4th.  The "version" in the first line is now the options list.
             (table, error) = csv_table_reader.read_table(filepath, tablename,
-                                                         skip_linenos={0, 1, 4},
+                                                         skip_linenos={1, 4},
+                                                         options_lineno=0,
                                                          types_lineno=3,
                                                          colnames_lineno=2)
 
@@ -271,9 +273,14 @@ def read_and_send_tables(json_requestor, options):
 
             nr_tables += 1
 
-            table_info[tablename]["nr_rows"] = len(table["rows"])
+            table_info[tablename]["nr_rows"] = table.get_nr_rows()
 
-            logging.info("Sending table '%s' to '%s:%d' (%d rows).", tablename, options.hostname, options.port, table_info[tablename]["nr_rows"])
+            properties = []
+            if table.get_property('static'): properties.append(' static')
+            if table.get_property('update'): properties.append(' update')
+            if table.get_property('persist'): properties.append(' persist')
+
+            logging.info("Sending%s table '%s' to '%s:%d' (%d rows).", ''.join(properties), tablename, options.hostname, options.port, table_info[tablename]["nr_rows"])
 
             json_requestor.send_table(table)
         
@@ -294,11 +301,12 @@ def publish_info_table(json_requestor, nr_tables, nr_errors):
 
     tablename = "qasino_csvpublisher_info"
 
-    table = { "tablename" : tablename,
-              "column_names" : [ "identity", "update_epoch", "nr_tables", "nr_errors" ],
-              "column_types" : [ "varchar", "int", "int", "int" ],
-              "rows" : [ [ Identity.get_identity(), time.time(), nr_tables, nr_errors ] ]
-              }
+    table = qasino_table.QasinoTable(tablename)
+    table.add_column("identity", "varchar")
+    table.add_column("update_epoch", "int")
+    table.add_column("nr_tables", "int")
+    table.add_column("nr_errors", "int")
+    table.add_row( [ Identity.get_identity(), time.time(), nr_tables, nr_errors ] )
 
     logging.info("Sending table '%s' to '%s:%d' (1 rows).", tablename, options.hostname, options.port)
 
@@ -308,25 +316,27 @@ def publish_tables_table(json_requestor, table_info):
 
     this_tablename = "qasino_csvpublisher_tables"
 
-    rows = []
+    table = qasino_table.QasinoTable(this_tablename)
+    table.add_column("identity", "varchar")
+    table.add_column("tablename", "varchar")
+    table.add_column("read_epoch", "int")
+    table.add_column("read_time_s", "int")
+    table.add_column("nr_errors", "int")
+    table.add_column("error_msg", "int")
+    table.add_column("nr_rows", "int")
+    table.add_column("filepath", "varchar")
 
     for tablename, table_stats in table_info.iteritems():
-        rows.append( [ Identity.get_identity(), 
-                       tablename,
-                       table_stats["read_epoch"], 
-                       table_stats["read_time_s"], 
-                       table_stats["nr_errors"],
-                       table_stats["error_msg"],
-                       table_stats["nr_rows"],
-                       table_stats["filepath"] ] )
-
-    table = { "tablename" : this_tablename,
-              "column_names" : [ "identity", "tablename", "read_epoch", "read_time_s", "nr_errors", "error_msg", "nr_rows", "filepath" ],
-              "column_types" : [ "varchar", "varchar", "int", "int", "int", "int", "int", "varchar" ],
-              "rows" : rows
-              }
-
-    logging.info("Sending table '%s' to '%s:%d' (%d rows).", this_tablename, options.hostname, options.port, len(rows))
+        table.add_row( [ Identity.get_identity(), 
+                         tablename,
+                         table_stats["read_epoch"], 
+                         table_stats["read_time_s"], 
+                         table_stats["nr_errors"],
+                         table_stats["error_msg"],
+                         table_stats["nr_rows"],
+                         table_stats["filepath"] ] )
+        
+    logging.info("Sending table '%s' to '%s:%d' (%d rows).", this_tablename, options.hostname, options.port, table.get_nr_rows())
 
     json_requestor.send_table(table)
 

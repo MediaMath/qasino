@@ -24,29 +24,38 @@ import data_manager
 import json_requestor
 from util import Identity
 import constants
+import qasino_table
 
 def send_dummy_table(json_requestor, schema_version):
 
-    table = {}
+    table = qasino_table.QasinoTable(options.tablename)
 
     if int(schema_version) == 0:
 
-        table = { "tablename" : options.tablename,
-                  "column_names" : [ "identity", "the", "quick", "brown", "fox" ],
-                  "column_types" : [ "varchar", "int", "int", "varchar", "varchar" ],
-                  "rows" : [ [ Identity.get_identity(), 34, 5, "yes", "no" ],
-                             [ Identity.get_identity(), 1000, 321, "zanzabar", strftime("%Y-%m-%d %H:%M:%S GMT", gmtime()) ] ]
-                  }
+        table.add_column("identity", "varchar")
+        table.add_column("the", "int")
+        table.add_column("quick", "int")
+        table.add_column("brown", "varchar")
+        table.add_column("fox", "varchar")
+        table.add_row( [ Identity.get_identity(), 34, 5, "yes", "no" ] )
+        table.add_row( [ Identity.get_identity(), 1000, 321, "zanzabar", strftime("%Y-%m-%d %H:%M:%S GMT", gmtime()) ] )
 
     else:
-        table = { "tablename" : options.tablename,
-                  "column_names" : [ "identity", "the", "quick", "brown", "fox", "foo" ],
-                  "column_types" : [ "varchar", "int", "int", "varchar", "varchar", "varchar" ],
-                  "rows" : [ [ Identity.get_identity(), 34, 5, "yes", "no", "here I am!" ],
-                             [ Identity.get_identity(), 1000, 321, "zanzabar", strftime("%Y-%m-%d %H:%M:%S GMT", gmtime()), "" ] ]
-                  }
+        table.add_column("identity", "varchar")
+        table.add_column("the", "int")
+        table.add_column("quick", "int")
+        table.add_column("brown", "varchar")
+        table.add_column("fox", "varchar")
+        table.add_column("foo", "varchar")
+        table.add_row( [ Identity.get_identity(), 34, 5, "yes", "no", "here I am!" ] )
+        table.add_row( [ Identity.get_identity(), 1000, 321, "zanzabar", strftime("%Y-%m-%d %H:%M:%S GMT", gmtime()), "" ] )
 
-    json_requestor.send_table(table, persist=options.persist, static=options.static)
+    if options.persist:
+        table.set_property("persist", 1)
+    if options.static:
+        table.set_property("static", 1)
+
+    json_requestor.send_table(table)
 
 
 if __name__ == "__main__":
