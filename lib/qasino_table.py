@@ -129,7 +129,7 @@ def get_a_random_table():
 
     column_types = [ type_array[ random.randint(0, len(type_array) - 1) ] for _ in range(nr_columns) ]
 
-    table = qasino_table.QasinoTable(util.random_string(4, 20))
+    table = QasinoTable(util.random_string(4, 20))
     table.set_column_names( [ util.random_string(1, 40) for _ in range(nr_columns) ] )
     table.set_column_types( column_types )
 

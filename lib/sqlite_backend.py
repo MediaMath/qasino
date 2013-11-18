@@ -264,23 +264,57 @@ class SqlConnections(object):
             return rowcount
 
     def do_insert_table(self, txn, table):
-
-        column_str = ", ".join( table.get_column_names() )
-        bind_str = ", ".join( [ "?" for x in table.get_column_names() ] )
-
-        sql = ''
-
+        """
+        Insert table into the backend.  Use multi-row insert
+        statements (supported in sqlite 3.7.11) for speed.
+        """
+        
         rowcount = 0
 
-        # TODO: make this more efficient
+        base_query = "INSERT INTO %s (%s) VALUES " % (table.get_tablename(), ",".join( table.get_column_names() ) )
+
+        nr_columns = len(table.get_column_names())
+        max_nr_values = 400  # supposedly the max is 500..
+
+        nr_values = 0
+        bind_values = []
+
+        one_row = '(' + ','.join(['?'] * nr_columns) + ')'
+
+        sql = base_query
 
         for row_index, row in enumerate(table.get_rows()):
 
-            sql = "INSERT INTO %s ( %s ) VALUES ( %s )" % (table.get_tablename(), column_str, bind_str)
+            if nr_values + nr_columns > max_nr_values:
 
-            txn.execute(sql, row)
+                # execute this batch and start again.
+
+                sql += ','.join([ one_row ] * (nr_values / nr_columns))
+
+                #logging.info("DEBUG: hit limit: executing (values %d, rows %d): %s", nr_values, rowcount, sql)
+
+                txn.execute(sql, bind_values)
+                bind_values = []
+                nr_values = 0
+                sql = base_query
+
+            nr_values += nr_columns
+
+            # add this row to our bind values
+
+            for value in row:
+                bind_values.append(value)
 
             rowcount += 1
+
+        # handle last batch
+        if rowcount > 0:
+            sql += ','.join([ one_row ] * (nr_values / nr_columns))
+
+            #logging.info("DEBUG: final: executing (values %d, rows %d): %s", nr_values, rowcount, sql)
+
+            txn.execute(sql, bind_values)
+
 
         return rowcount
 
@@ -431,6 +465,8 @@ class SqlConnections(object):
         This is executed using adbapi in a thread pool.
         """
 
+        start_time = time.time()
+
         # For when we hit lock contention - only retry so many times.
 
         table.init_retry(5)
@@ -440,11 +476,6 @@ class SqlConnections(object):
         update = table.get_property('update')
         static = table.get_property('static')
         persist = table.get_property('persist')
-
-        properties_str = ''
-        if static: properties_str += ' static'
-        if update: properties_str += ' update'
-        if persist: properties_str += ' persist'
 
         # Check if we need to save the table in case of persistence.
 
@@ -460,8 +491,6 @@ class SqlConnections(object):
             # Ignore
             pass
 
-        logging.info("SqlConnections:%s update for table '%s' from '%s'", properties_str, tablename, identity)
-            
         try:
             # Wrap the create, alter tables and inserts or updates in
             # a transaction... All or none please.
@@ -565,6 +594,14 @@ class SqlConnections(object):
         now = time.time()
 
         nr_rows = table.get_nr_rows()
+
+        properties_str = ''
+        if static: properties_str += ' static'
+        if update: properties_str += ' update'
+        if persist: properties_str += ' persist'
+
+        logging.info("SqlConnections: New data%s for table '%s' %d rows from '%s' (%.02f seconds)", 
+                     properties_str, tablename, rowcount, identity, now - start_time)
 
         # Update some informational stats used for making the tables
         # and connections tables.

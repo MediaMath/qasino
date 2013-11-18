@@ -36,6 +36,8 @@ if __name__ == "__main__":
                       help="Use HOSTNAME to connect to", metavar="HOSTNAME")
     parser.add_option("-n", "--nr-tables", dest="nr_tables", default=3,
                       help="Number of random tables to send", metavar="NUM")
+    parser.add_option("-p", "--persist", dest="persist", default=False, action="store_true",
+                      help="Set the persistent option on the table(s)")
 
     #parser.add_option("-q", "--quiet",
     #                  action="store_false", dest="verbose", default=True,
@@ -55,6 +57,8 @@ if __name__ == "__main__":
     for x in range(int(options.nr_tables)):
 
         table = qasino_table.get_a_random_table()
+        if options.persist:
+            table.set_property("persist", 1)
 
         logging.info("Sending random table of %d rows on port %d", table.get_nr_rows(), constants.HTTPS_PORT)
 
