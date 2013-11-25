@@ -5,15 +5,18 @@ import sys
 import signal
 import logging
 from optparse import OptionParser
-import copy
+import crypt
 
-from twisted.internet import reactor
-from twisted.internet import task
+from twisted.internet import reactor, ssl, task
 from twisted.application.internet import TCPServer
 from twisted.application.service import Application
-from twisted.web import server, resource, http
+from twisted.web import server, resource, http, guard
 from twisted.python import log
 from OpenSSL import SSL
+from twisted.cred.portal import Portal, IRealm
+from twisted.cred.checkers import FilePasswordDB
+
+from zope.interface import implements
 
 for path in [
     os.path.join('opt', 'qasino', 'lib'),
@@ -60,6 +63,10 @@ if __name__ == "__main__":
                       help="The length of a collection interval (generation) in seconds.", metavar="SECONDS")
     parser.add_option("-v", "--views-file", dest="views_file", default='views.conf',
                       help="A file containing a list of views to create.", metavar="FILE")
+    parser.add_option("-K", "--keys-dir", dest="keys_dir", default='/opt/qasino/etc/keys',
+                      help="Directory where server keys can be found.", metavar="DIR")
+    parser.add_option("-p", "--htpasswd-file", dest="htpasswd_file", default='/opt/qasino/etc/htpasswd',
+                      help="Path to htpasswd file.", metavar="FILE")
 
     (options, args) = parser.parse_args()
 
@@ -140,19 +147,38 @@ if __name__ == "__main__":
 
     logging.info("Listening for HTTPS requests on port %d", constants.HTTPS_PORT)
 
-    class ServerContextFactory:
-        def getContext(self):
-            """
-            Create an SSL context.
-            """
-            ctx = SSL.Context(SSL.SSLv23_METHOD)
-            ctx.use_certificate_file('server.crt')
-            ctx.use_privatekey_file('server.key')
-            ctx.use_certificate_chain_file('server-ca.crt')
-            return ctx
+    class SimpleRealm(object):
+        """
+        A realm which gives out L{GuardedResource} instances for authenticated
+        users.
+        """
+        implements(IRealm)
+
+        def requestAvatar(self, avatarId, mind, *interfaces):
+            if resource.IResource in interfaces:
+                return resource.IResource, http_root, lambda: None
+            raise NotImplementedError()
+
+    def cmp_pass(uname, password, storedpass):
+        return crypt.crypt(password, storedpass[:2])
+
+    checkers = [ FilePasswordDB(options.htpasswd_file, hash=cmp_pass) ]
+
+    wrapper = guard.HTTPAuthSessionWrapper( Portal(SimpleRealm(), checkers),
+                                            [ guard.BasicCredentialFactory('qasino.com') ])
+
+    ssl_site =  server.Site(wrapper)
 
     try:
-        reactor.listenSSL(constants.HTTPS_PORT, site, ServerContextFactory())
+        if not os.path.isfile(options.htpasswd_file):
+            raise Exception("htpasswd file '%s' does not exist" % options.htpasswd_file)
+
+        reactor.listenSSL(constants.HTTPS_PORT, 
+                          ssl_site, 
+                          ssl.DefaultOpenSSLContextFactory(options.keys_dir + 'server.key', 
+                                                           options.keys_dir + 'server.crt')
+                         )
+
     except Exception as e:
         logging.info("Failed to listen on SSL port %d, continuing anyway (%s).", constants.HTTPS_PORT, str(e))
 

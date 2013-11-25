@@ -29,7 +29,7 @@ class HttpReceiver(Resource):
 
     def render_GET(self, request):
 
-        pprint(request.__dict__)
+        #pprint(request.__dict__)
 
         if 'op' in request.args:
 
