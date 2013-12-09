@@ -125,8 +125,10 @@ class CsvTableReader(object):
                             raise Exception("Could not find type for column %d on line %d!" % (column_index, lineno))
 
                         try:
-                            if (column_type == 'int'):
+                            if column_type == 'INTEGER':
                                 output_row.append(int(column_cell))
+                            elif column_type == 'REAL':
+                                output_row.append(float(column_cell))
                             else:
                                 output_row.append(column_cell)
                         except:
