@@ -30,14 +30,30 @@ if __name__ == "__main__":
 
     parser.add_option("-i", "--identity", dest="identity",
                       help="Use IDENTITY as identity", metavar="IDENTITY")
-    parser.add_option("-s", "--schema-version", dest="schema_version", default=0,
-                      help="Use schema version VERSION", metavar="VERSION")
+
     parser.add_option("-H", "--hostname", dest="hostname", default=0,
                       help="Use HOSTNAME to connect to", metavar="HOSTNAME")
+
+    parser.add_option("-u", "--username", dest="username", 
+                      help="HTTPS auth username")
+
+    parser.add_option("-w", "--password", dest="password", 
+                      help="HTTPS auth password")
+
+    parser.add_option("-P", "--port", dest="port", default=constants.HTTP_PORT,
+                      help="Use PORT to connect to", metavar="PORT")
+
     parser.add_option("-n", "--nr-tables", dest="nr_tables", default=3,
                       help="Number of random tables to send", metavar="NUM")
+
     parser.add_option("-p", "--persist", dest="persist", default=False, action="store_true",
                       help="Set the persistent option on the table(s)")
+
+    parser.add_option("-S", "--use-SSL", dest="use_SSL", default=False, action="store_true",
+                      help="Connect with SSL.")
+
+    parser.add_option("-s", "--skip-ssl-verify", dest="skip_ssl_verify", default=False, action="store_true",
+                      help="Don't verify SSL certificates.")
 
     #parser.add_option("-q", "--quiet",
     #                  action="store_false", dest="verbose", default=True,
@@ -48,11 +64,25 @@ if __name__ == "__main__":
     if options.identity != None:
         util.Identity.set_identity(options.identity)
 
+    if options.use_SSL:
+        url_proto = 'https'
+        if options.port == constants.HTTP_PORT:
+            options.port = constants.HTTPS_PORT
+    else:
+        url_proto = 'http'
+
     logging.basicConfig(format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S",
                         level=logging.INFO)
 
 
     conn = requests.Session()
+
+    request_options = { 'headers' : {'Content-Type': 'application/json'} }
+
+    if options.skip_ssl_verify:
+        request_options['verify'] = False
+    if options.username and options.password:
+        request_options['auth'] = (options.username, options.password)
 
     for x in range(int(options.nr_tables)):
 
@@ -60,15 +90,17 @@ if __name__ == "__main__":
         if options.persist:
             table.set_property("persist", 1)
 
-        logging.info("Sending random table of %d rows on port %d", table.get_nr_rows(), constants.HTTPS_PORT)
+        logging.info("Sending random table of %d rows on %s port %d", table.get_nr_rows(), url_proto, options.port)
 
-        URL = 'https://%s:%d/request?op=add_table_data' % (options.hostname, constants.HTTPS_PORT)
+        URL = '%s://%s:%d/request?op=add_table_data' % (url_proto, options.hostname, options.port)
 
         jsondata = table.get_json(op="add_table_data", identity=util.Identity.get_identity())
 
         #print jsondata
     
-        response = conn.post(URL, data=jsondata, headers={'Content-Type': 'application/json'})
+        request_options['data'] = jsondata
+
+        response = conn.post(URL, **request_options)
 
 #        resp, content = h.request(URL,
 #                                  'POST',
