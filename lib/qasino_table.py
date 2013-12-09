@@ -26,11 +26,13 @@ class QasinoTable(object):
         return self.column_names
 
     def init_retry(self, nr_retries=5):
+        if self.__dict__.has_key('retry_count'):
+            return
         self.retry_count = nr_retries
 
     def test_retry(self):
         try:
-            self.retry_count -= 0
+            self.retry_count -= 1
             if self.retry_count <= 0:
                 return True
         except:
