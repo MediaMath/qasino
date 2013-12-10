@@ -11,6 +11,7 @@ import sqlite3
 from optparse import OptionParser
 import zmq
 import requests
+import getpass
 
 for path in [
     os.path.join('opt', 'qasino', 'lib'),
@@ -24,6 +25,52 @@ import json_requestor
 import constants
 import util
 
+class QasinoZMQConnection(object):
+    def __init__(self, options):
+        self.options = options
+        self.socket = None
+
+    def connect(self):
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect("tcp://%s:%s" % (self.options.hostname, self.options.port))
+
+    def send_and_get_response(self, json):
+        if self.socket == None:
+            return None
+        self.socket.send(json)
+        return self.socket.recv()
+
+
+class QasinoHttpConnection(object):
+    def __init__(self, options):
+        self.options = options
+
+    def connect(self):
+        self.requests_conn = requests.Session()
+
+    def send_and_get_response(self, json):
+        if self.requests_conn == None:
+            return None
+
+        URL = 'https://%s:%d/request?op=query' % (self.options.hostname, self.options.port)
+
+        request_options = { 'headers' : {'Content-Type': 'application/json'},
+                            'data' : json } 
+
+        if self.options.skip_ssl_verify:
+            request_options['verify'] = False
+        if self.options.username and self.options.password:
+            request_options['auth'] = (self.options.username, self.options.password)
+
+        try:
+            response = self.requests_conn.post(URL, **request_options)
+        except Exception as e:
+            print "ERROR: failed to send HTTPS POST to '%s': %s" % (URL, str(e))
+            return None
+
+        return response.text
+
 class QasinoCmd(cmd.Cmd):
 
     multiline_prompt = '      > '
@@ -32,17 +79,26 @@ class QasinoCmd(cmd.Cmd):
 
     sql_statement = ''
 
-    def __init__(self, socket):
-        self.socket = socket
+    def __init__(self, conn):
+        self.conn = conn
         self.use_write_db = False
         cmd.Cmd.__init__(self)
 
     def send_query(self, sql_statement, use_write_db=False):
+
         request_meta = { "op" : "query", "sql" : sql_statement,
                          "use_write_db" : use_write_db }
-        self.socket.send(json.dumps(request_meta))
-        response = self.socket.recv()
-        obj = json.loads(response)
+
+        response = self.conn.send_and_get_response(json.dumps(request_meta))
+        if response == None:
+            print "ERROR: error communicating with server"
+            return
+
+        try:
+            obj = json.loads(response)
+        except Exception as e:
+            print "ERROR: unable to parse response from server: %s: %s" % (response, str(e))
+            return
 
         if obj == None or "response_op" not in obj:
             print "ERROR: invalid response from server: ", obj
@@ -150,16 +206,26 @@ if __name__ == "__main__":
     parser.add_option("-H", "--hostname", dest="hostname", default='localhost',
                       help="Send table to HOSTNAME qasino server", metavar="HOSTNAME")
 
-    parser.add_option("-p", "--port", dest="port", default=constants.JSON_RPC_PORT,
+    parser.add_option("-p", "--port", dest="port", default=constants.HTTPS_PORT,
                       help="Use PORT for qasino server", metavar="PORT")
 
-#    parser.add_option("-t", "--use-https", dest="use_https", default=True,
-#                      action='store_true',
-#                      help="Use HTTPS transport for making queries")
+    parser.add_option("-t", "--use-https", dest="use_https", default=False,
+                      action='store_true',
+                      help="Use HTTPS transport for making queries")
 
-    parser.add_option("-z", "--use-zmq", dest="use_zmq", default=True,
+    parser.add_option("-z", "--use-zmq", dest="use_zmq", default=False,
                       action='store_true',
                       help="Use ZeroMQ transport for making queries")
+
+    parser.add_option("-u", "--username", dest="username", 
+                      help="HTTPS auth username")
+
+    parser.add_option("-w", "--password", dest="password", 
+                      help="HTTPS auth password")
+
+    parser.add_option("-s", "--skip-ssl-verify", dest="skip_ssl_verify", default=False, 
+                      action="store_true",
+                      help="Don't verify SSL certificates.")
 
     (options, args) = parser.parse_args()
 
@@ -170,25 +236,50 @@ if __name__ == "__main__":
         print "Please specify a hostname to connect to."
         exit(1)
 
-#    if options.use_https and options.use_zmq:
-#        print "Can not use both ZMQ and HTTPS transports."
-#        exit(1)
+    # Can't do both.
+    if options.use_https and options.use_zmq:
+        print "Can not use both ZMQ and HTTPS transports."
+        exit(1)
+
+    # Pick a default.
+    if not options.use_https and not options.use_zmq:
+        options.use_https = True
 
     # Catch signals
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    print "Connecting to %s:%d." % (options.hostname, options.port)
+    if options.use_zmq and options.port == constants.HTTPS_PORT:
+        # switch to the right default port for zmq
+        options.port = constants.JSON_RPC_PORT
+    
+    print "Connecting to %s %s:%d." % ('https' if options.use_https else 'zmq', 
+                                       options.hostname, options.port)
 
-#    if options.use_https:
-#        conn = requests.Session()
-        
+
+    if options.use_https:
+
+        if not options.username:
+            options.username = os.environ.get('QASINO_SQLCLIENT_USERNAME')
+            
+        if not options.password:
+            options.password = os.environ.get('QASINO_SQLCLIENT_PASSWORD')
+
+        if options.username and not options.password:
+            options.password = getpass.getpass()
+
+        conn = QasinoHttpConnection(options)
+        conn.connect()
+
     if options.use_zmq:
-        context = zmq.Context()
-        socket = context.socket(zmq.REQ)
-        socket.connect("tcp://%s:%s" % (options.hostname, options.port))
+        # switch to the right default port
+        if options.port == constants.HTTPS_PORT:
+            options.port = constants.JSON_RPC_PORT
 
-    QasinoCmd(socket).cmdloop()
+        conn = QasinoZMQConnection(options)
+        conn.connect()
+
+    QasinoCmd(conn).cmdloop()
 
 
