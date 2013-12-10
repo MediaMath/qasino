@@ -26,6 +26,9 @@ class SqlConnections(object):
     by the data manager.
     """
 
+    WRITER_INTERACTION = 0
+    READER_INTERACTION = 1
+
     def __init__(self, filename, data_manager, archive_db_dir, thread_id, static_filename):
         self.data_manager = data_manager
         self.tables = {}
@@ -54,10 +57,25 @@ class SqlConnections(object):
                 except Exception as e:
                     logging.info("SqlConnections: ERROR Failed to attach static db '%s': %s", static_filename, str(e))
 
-        self.dbpool = adbapi.ConnectionPool('apsw_connection', filename, cp_openfun=attach_static_db) ##, check_same_thread=False)
-        self.dbpool.connectionFactory = apsw_connection.ApswConnection
+        # Open a connection pool for writing (one thread)...
 
-        self.dbpool.runInteraction(self.preload_tables_list)
+        self.writer_dbpool = adbapi.ConnectionPool('apsw_connection', filename, 
+                                                   cp_openfun=attach_static_db,
+                                                   cp_min=1, cp_max=1)
+                                                   
+        self.writer_dbpool.connectionFactory = apsw_connection.ApswConnection
+
+        # ...and one for reading (multiple threads).
+
+        self.reader_dbpool = adbapi.ConnectionPool('apsw_connection', filename, 
+                                                   cp_openfun=attach_static_db)
+
+        self.reader_dbpool.connectionFactory = apsw_connection.ApswConnection
+
+
+        # Preload list of tables already in db.
+
+        self.reader_dbpool.runInteraction(self.preload_tables_list)
        
 
     def __del__(self):
@@ -74,9 +92,11 @@ class SqlConnections(object):
         # is the dtor!) for later.
 
         if self.main_thread == thread.get_ident():
-            SqlConnections.shutdown(self.dbpool, self.filename, self.archive_db_dir)
+            SqlConnections.shutdown(self.writer_dbpool, self.filename, self.archive_db_dir)
+            SqlConnections.shutdown(self.reader_dbpool, self.filename, self.archive_db_dir)
         else:
-            reactor.callLater(0.1, SqlConnections.shutdown, self.dbpool, self.filename, self.archive_db_dir)
+            reactor.callLater(0.1, SqlConnections.shutdown, self.writer_dbpool, self.filename, self.archive_db_dir)
+            reactor.callLater(0.1, SqlConnections.shutdown, self.reader_dbpool, self.filename, self.archive_db_dir)
 
     @staticmethod
     def shutdown(dbpool, filename, archive_db_dir):
@@ -318,11 +338,17 @@ class SqlConnections(object):
 
         return rowcount
 
-    def run_interaction(self, callback, *args, **kwargs):
+    def run_interaction(self, interaction_type, callback, *args, **kwargs):
         """ 
         Initiate a adbapi async interaction run a generic function, returns the deferred obj.
         """
-        return self.dbpool.runInteraction(callback, *args, **kwargs)
+        if interaction_type == SqlConnections.WRITER_INTERACTION:
+            return self.writer_dbpool.runInteraction(callback, *args, **kwargs)
+
+        elif interaction_type == SqlConnections.READER_INTERACTION:
+            return self.reader_dbpool.runInteraction(callback, *args, **kwargs)
+
+        return
 
     def insert_info_table(self, txn, db_generation_number, generation_start_epoch, generation_duration_s):
         """ 
@@ -457,7 +483,7 @@ class SqlConnections(object):
         """
         Initiate a adbapi async interaction to add a table to the backend, returns the deferred obj.
         """
-        return self.dbpool.runInteraction(self.add_table_data, *args, **kwargs)
+        return self.writer_dbpool.runInteraction(self.add_table_data, *args, **kwargs)
 
     def add_table_data(self, txn, table, identity):
         """ 

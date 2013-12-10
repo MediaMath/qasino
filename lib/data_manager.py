@@ -127,9 +127,11 @@ class DataManager(object):
 
     def async_validate_and_route_query(self, sql, query_id, use_write_db=False):
         if use_write_db:
-            return self.sql_backend_writer.dbpool.runInteraction(self.validate_and_route_query, sql, query_id, self.sql_backend_writer)
+            return self.sql_backend_writer.run_interaction(sql_backend.SqlConnections.WRITER_INTERACTION, 
+                                                           self.validate_and_route_query, sql, query_id, self.sql_backend_writer)
         else:
-            return self.sql_backend_reader.dbpool.runInteraction(self.validate_and_route_query, sql, query_id, self.sql_backend_reader)
+            return self.sql_backend_reader.run_interaction(sql_backend.SqlConnections.READER_INTERACTION,
+                                                           self.validate_and_route_query, sql, query_id, self.sql_backend_reader)
 
 
     def validate_and_route_query(self, txn, sql, query_id, sql_backend):
@@ -261,7 +263,7 @@ class DataManager(object):
         some internal tables and views to add before we rotate dbs.
         """
         
-        self.sql_backend_writer.run_interaction(self.rotate_dbs)
+        self.sql_backend_writer.run_interaction(sql_backend.SqlConnections.WRITER_INTERACTION, self.rotate_dbs)
 
     def rotate_dbs(self, txn):
         """ 

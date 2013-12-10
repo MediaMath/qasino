@@ -10,6 +10,7 @@ import re
 import sqlite3
 from optparse import OptionParser
 import zmq
+import requests
 
 for path in [
     os.path.join('opt', 'qasino', 'lib'),
@@ -152,6 +153,14 @@ if __name__ == "__main__":
     parser.add_option("-p", "--port", dest="port", default=constants.JSON_RPC_PORT,
                       help="Use PORT for qasino server", metavar="PORT")
 
+#    parser.add_option("-t", "--use-https", dest="use_https", default=True,
+#                      action='store_true',
+#                      help="Use HTTPS transport for making queries")
+
+    parser.add_option("-z", "--use-zmq", dest="use_zmq", default=True,
+                      action='store_true',
+                      help="Use ZeroMQ transport for making queries")
+
     (options, args) = parser.parse_args()
 
     if options.identity != None:
@@ -161,6 +170,10 @@ if __name__ == "__main__":
         print "Please specify a hostname to connect to."
         exit(1)
 
+#    if options.use_https and options.use_zmq:
+#        print "Can not use both ZMQ and HTTPS transports."
+#        exit(1)
+
     # Catch signals
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -168,9 +181,13 @@ if __name__ == "__main__":
 
     print "Connecting to %s:%d." % (options.hostname, options.port)
 
-    context = zmq.Context()
-    socket = context.socket(zmq.REQ)
-    socket.connect("tcp://%s:%s" % (options.hostname, options.port))
+#    if options.use_https:
+#        conn = requests.Session()
+        
+    if options.use_zmq:
+        context = zmq.Context()
+        socket = context.socket(zmq.REQ)
+        socket.connect("tcp://%s:%s" % (options.hostname, options.port))
 
     QasinoCmd(socket).cmdloop()
 
