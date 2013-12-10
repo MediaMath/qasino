@@ -243,7 +243,7 @@ if __name__ == "__main__":
 
     # Pick a default.
     if not options.use_https and not options.use_zmq:
-        options.use_https = True
+        options.use_zmq = True
 
     # Catch signals
 
