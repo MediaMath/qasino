@@ -1,14 +1,32 @@
 Qasino
 ======
 
-Qasino is a stats collection system that supports tabular stats
-stored in a database for querying with SQL.  Stats are ephemeral,
-meaning only the latest stats reported for a given table are available
-in the database.  The same table reported from multiple machines is
-merged automatically.
+Qasino is a stats server that supports tabular stats stored in a
+database for querying with SQL.  Stats are snapshots, meaning only the
+latest stats reported for a given table are available in the database.
+The full flexiblity of SQL including joining, filtering and
+aggregation are availble on all stats in the system.  Multiple data
+tables of the same name are merged automatically into a single
+queryable table on the server.
 
-Currently qasino is implemented in python using the twisted
-framework and http and zeromq transports with a sqlite backend data store.
+Many stats systems provide history for stats but not a good way to
+join, correlate or connect stats together.  Qasino does not provide
+history (directly) but does make it really easy to correlate and cross
+reference stats together.
+
+Sometimes you just want to know the current state of your systems and
+Qasino excels at giving you that information.  You can report anything
+and formulate queries to connect different stats together.  For
+example, cpu usage along with ops per second.  Or configuration files
+with the md5sum of each.
+
+Qasino provides interfaces to publish tables to it but has no built-in
+facilities for collecting stats.  Applications need to provide the
+stats and publish via ZMQ, HTTP or CSV file.  In the future there will
+be integration with stat collectors like Statsd, Diamond and Graphite.
+
+Currently qasino is implemented in Python using the Twisted framework
+and HTTP and ZeroMQ transports with Sqlite for the backend data store.
 
 ##Installation
 
@@ -19,6 +37,7 @@ You'll need to have the following python libraries installed:
 - python-httplib2
 - python-apsw
 - python-yaml
+- pythong-requests
 
 ##Running
 
@@ -37,19 +56,21 @@ To run the CSV publisher:
 
 ##Overview
 
-The qasino server receives requests from clients to publish tabular data.  
-The data is added to a backend sqlite database.  The data is collected
-for a fixed period (default 30 seconds) after which it is snapshotted.
-The snapshotted database becomes the data source for all incoming SQL
-requests until the next snapshot.  For this reason all publishers
-need to publish updated stats every snapshot period.
+The qasino server receives requests from clients to publish tabular
+data.  The data is added to a backend sqlite database.  The data is
+collected for a fixed period (default 30 seconds) after which it is
+snapshotted.  The snapshotted database becomes the data source for all
+incoming SQL requests until the next snapshot.  For this reason all
+publishers need to publish updated stats every snapshot period (with
+the exception of static tables or persistent tables which are
+described below).
 
 To orchestrate this process better the server publishes on a ZeroMQ
 pub-sub channel the snapshot (aka generation) signal.  This should
-trigger all publishers to send table data.  qasino_cvspublisher
-works this way.  It is by no means required.  In fact a simpler
-approach is just to have all publishers publish their data on 
-an interval that matches the generation interval.
+trigger all publishers to send table data.  qasino_cvspublisher works
+this way.  It is by no means required though.  In fact a simpler
+approach is just to have all publishers publish their data on an
+interval that matches the generation interval.
 
 ##Querying (SQL)
 
@@ -72,8 +93,10 @@ simply connect using telnet and send your query.
 
 ###Python Client
 
-Connect using bin/qasino_sqlclient.py.  This client uses ZeroMQ to 
-send JSON formated messages to the server.
+Connect using bin/qasino_sqlclient.py.  This client uses ZeroMQ to
+send JSON formated messages to the server.  (It can also connect using
+a HTTPS given the --use-https option but that requires the right
+credentials to work).
 
     $ bin/qasino_sqlclient.py -H1.2.3.4
     Connecting to 1.2.3.4:15598.
@@ -116,12 +139,30 @@ Or make a GET request with the 'format=text' query string parameter to get a hum
     1 rows returned
     $
 
+###Internal Tables
+
+Qasino server automatically publishes the following internal tables:
+- qasino_server_info
+- qasino_server_tables
+- qasino_server_connections
+- qasino_server_views
+
+The following commands are shortcuts to looking at these tables:
+- SHOW info;
+- SHOW tables;
+- SHOW connections;
+- SHOW views;
+
+The schema for a table can be found with 'DESC <tablename>;' and the
+definition of a view can be found with 'DESC VIEW <viewname>;'
+
+
 ##Publishing
 
-Currently the only client officially implemented is a CSV file publisher.  
-The CSV publisher takes an index file with a list of CSV files in it to
-publish and/or a index list file with a list of index files to
-process in the same manner.
+Currently the only publishing client officially implemented is a CSV
+file publisher.  The CSV publisher takes an index file with a list of
+CSV files in it to publish and/or a index list file with a list of
+index files to process in the same manner.
 
 ###Index File Format
 
@@ -207,3 +248,60 @@ The table should appear in Qasino.  Publishing would have to happen regularly fo
     1.2.3.4         BOS    123    456
     1 rows returned
     qasino>
+
+###Persistent tables
+
+A node can publish a table with the option 'persist' to indicate that
+the table should be carried through each generation.  An option is
+given in the top level dict of the JSON object.  For example:
+
+    { "op" : "add_table_data",
+      "persist" : 1,
+      "identity" : "1.2.3.4",
+      "table" : {  "tablename" : "myapplication_table1",
+                   "column_names" : [ "ipaddr", "datacenter", "stat1", "stat2" ],
+                   "column_types" : [ "ip", "string", "int", "int" ],
+                   "rows" : [ [ "1.2.3.4", "BOS", 123, 456 ] ]
+                }
+    }
+
+Some things to note.
+
+- The stats are carried forward for each successive generation so that means the server has to hold onto an extra copy of the stats which can consume additional memory.
+- If the server is restarted the persistent stats will go away until they are resent.
+- The tables are tracked per tablename (at the moment), so multiple updates for the same table overwrite.
+
+###Static tables
+
+Static tables are set using the "static" option similar to persist
+above but get loaded into a special persistent Sqlite DB that is
+connected to the ephemeral databases.  Tables that are static persist
+between Qasino server restarts.  They are also stored by tablename so
+multiple updates to the same table overwrite.
+
+###Views
+
+Views are supported by using a view configuration file.  The Qasino
+server will look by default (change it with the --views-file option)
+for a file in the current directory called 'views.conf' that is a YAML
+file that has the following format:
+
+    ---
+    
+    - viewname: testview
+      view: | 
+        create view testview as select 
+          * from qasino_server_info;
+
+    - viewname: anotherview
+      view: | 
+        create view anotherview as select 
+          * from qasino_server_tables;
+
+It is an array of items with 'viewname' and 'view' properties.  The
+'view' property specifies the actual view to create.  
+
+The views file is monitored for changes and automatically reloaded.
+
+You can get the definition of a view from the qasino_server_views
+table or the 'DESC VIEW' command.
