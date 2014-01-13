@@ -31,83 +31,88 @@ class HttpReceiver(Resource):
 
         #pprint(request.__dict__)
 
-        if 'op' in request.args:
+        if 'op' not in request.args:
+            logging.error("HttpReceiver: No op specified for GET request: %s", ','.join(request.args))
+            response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "No op specified" }
+            return json.dumps(response_meta)
 
-            ## A simple name value update op.
+        ## A simple name value update op.
 
-            if request.args['op'][0] == "name_value_update":
-                logging.info("HttpReceiver: Name value update.")
+        if request.args['op'][0] == "name_value_update":
+            logging.info("HttpReceiver: Name value update.")
 
-                if 'name' in request.args and 'value' in request.args:
-                    
-                    identity = request.args['identity'][0] if 'identity' in request.args else 'unknown'
-                    
-                    # Parse the name into '<tablename>.<column>'
-                    
-                    name = request.args['name'][0]
+            if 'name' in request.args and 'value' in request.args:
+                
+                identity = request.args['identity'][0] if 'identity' in request.args else 'unknown'
+                
+                # Parse the name into '<tablename>.<column>'
+                
+                name = request.args['name'][0]
 
-                    m = re.search(r'^([\w_]+)\.([\w_]+)$', name)
-                    if m == None:
-                        logging.info("HttpReciever: Invalid name in name value update: '%s'", name)
-                        return ''
+                m = re.search(r'^([\w_]+)\.([\w_]+)$', name)
+                if m == None:
+                    logging.info("HttpReciever: Invalid name in name value update: '%s'", name)
+                    return ''
 
-                    tablename = m.group(1)
-                    columnname = m.group(2)
-                    value = request.args['value'][0]
+                tablename = m.group(1)
+                columnname = m.group(2)
+                value = request.args['value'][0]
 
-                    table = qasino_table.QasinoTable(tablename)
-                    table.add_column('identity', 'varchar')
-                    table.add_column(columnname, 'varchar')
-                    table.add_row( [ identity, value ] )
-                    table.set_property('update', 1)
-                    table.set_property('persist', 1)
+                table = qasino_table.QasinoTable(tablename)
+                table.add_column('identity', 'varchar')
+                table.add_column(columnname, 'varchar')
+                table.add_row( [ identity, value ] )
+                table.set_property('update', 1)
+                table.set_property('persist', 1)
 
-                    self.data_manager.sql_backend_writer.async_add_table_data(table, identity)
+                self.data_manager.sql_backend_writer.async_add_table_data(table, identity)
 
-            ## Query op
+        ## Query op
 
-            if request.args['op'][0] == "query":
+        elif request.args['op'][0] == "query":
 
-                # Check 'format' arg to determine output type.
-                JSON = 1
-                TEXT = 2
-                HTML = 3  ## TODO
-                format = JSON 
-                try:
-                    if request.args['format'][0] == 'text':
-                        format = TEXT
-                    elif request.args['format'][0] == 'html':
-                        format = HTML
-                except:
-                    pass
+            # Check 'format' arg to determine output type.
+            JSON = 1
+            TEXT = 2
+            HTML = 3  ## TODO
+            format = JSON 
+            try:
+                if request.args['format'][0] == 'text':
+                    format = TEXT
+                elif request.args['format'][0] == 'html':
+                    format = HTML
+            except:
+                pass
 
-                # It is an error if no sql specified.
-                if 'sql' not in request.args:
-                    logging.info("HttpReceiver: GET Query received with no sql.")
-                    if format == TEXT:
-                        return "Must specify 'sql' param."
-                    else:
-                        response_meta = { "response_op" : "error", "error_message" : "Must specify 'sql' param", "identity" : util.Identity.get_identity() }
-                        return json.dumps(response_meta)
+            # It is an error if no sql specified.
+            if 'sql' not in request.args:
+                logging.info("HttpReceiver: GET Query received with no sql.")
+                if format == TEXT:
+                    return "Must specify 'sql' param."
+                else:
+                    response_meta = { "response_op" : "error", "error_message" : "Must specify 'sql' param", "identity" : util.Identity.get_identity() }
+                    return json.dumps(response_meta)
 
 
-                sql = request.args['sql'][0]
-                try:
-                    if format == TEXT:
-                        self.process_sql_statement_for_text(sql, request)
-                    else:
-                        self.process_sql_statement(sql, request)
-                    return NOT_DONE_YET
+            sql = request.args['sql'][0]
+            try:
+                if format == TEXT:
+                    self.process_sql_statement_for_text(sql, request)
+                else:
+                    self.process_sql_statement(sql, request)
+                return NOT_DONE_YET
 
-                except Exception as e:
-                    logging.error('HttpReceiver: Error processing sql: %s: %s', str(e), sql)
-                    if format == TEXT:
-                        return "Error processing sql: %s" % str(e)
-                    else:
-                        response_meta = { "response_op" : "error", "error_message" : "Error processing sql: %s" % str(e), "identity" : util.Identity.get_identity() }
-                        return json.dumps(response_meta)
+            except Exception as e:
+                logging.error('HttpReceiver: Error processing sql: %s: %s', str(e), sql)
+                if format == TEXT:
+                    return "Error processing sql: %s" % str(e)
+                else:
+                    response_meta = { "response_op" : "error", "error_message" : "Error processing sql: %s" % str(e), "identity" : util.Identity.get_identity() }
+                    return json.dumps(response_meta)
 
-        return ''
+        logging.error("HttpReceiver: Unknown op: %s", request.args['op'][0])
+        response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "Unrecognized operation" }
+        return json.dumps(response_meta)
 
     def render_POST(self, request):
 
@@ -127,51 +132,53 @@ class HttpReceiver(Resource):
             response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "Could not parse POST body: %s" % str(e) }
             return json.dumps(response_meta)
 
+        if 'op' not in request.args:
+            logging.error("HttpReceiver: No op specified for POST request: %s", ','.join(request.args))
+            response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "No op specified" }
+            return json.dumps(response_meta)
 
-        if 'op' in request.args:
+        ## Table list op
 
-            ## Table list op
+        if request.args['op'][0] == "get_table_list":
+            logging.info("HttpReceiver: Got request for table list.")
+            response_meta = { "response_op" : "tables_list", "identity" : util.Identity.get_identity() }
+            response_data = self.data_manager.get_table_list()
+            return json.dumps(response_meta) + json.dumps(response_data)
 
-            if request.args['op'][0] == "get_table_list":
-                logging.info("HttpReceiver: Got request for table list.")
-                response_meta = { "response_op" : "tables_list", "identity" : util.Identity.get_identity() }
-                response_data = self.data_manager.get_table_list()
-                return json.dumps(response_meta) + json.dumps(response_data)
+        ## Add table data op
 
-            ## Add table data op
+        if request.args['op'][0] == "add_table_data":
+            logging.info("HttpReceiver: Add table data.")
+            table = qasino_table.QasinoTable()
+            table.from_obj(obj)
+            response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
+            try:
+                if table.get_property("static"):
+                    self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
+                else:
+                    self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
+            except Exception as e:
+                response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
+            
+            return json.dumps(response_meta)
 
-            if request.args['op'][0] == "add_table_data":
-                logging.info("HttpReceiver: Add table data.")
-                table = qasino_table.QasinoTable()
-                table.from_obj(obj)
-                response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
-                try:
-                    if table.get_property("static"):
-                        self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
-                    else:
-                        self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
-                except Exception as e:
-                    response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
-                
+        ## Query op
+
+        if request.args['op'][0] == "query":
+
+            if 'sql' not in obj:
+                response_meta = { "response_op" : "error", "error_message" : "Must specify 'sql' param", "identity" : util.Identity.get_identity() }
+                logging.info("HttpReceiver: Query received with no sql.")
                 return json.dumps(response_meta)
 
-            ## Query op
+            try:
+                self.process_sql_statement(obj["sql"], request)
+                return NOT_DONE_YET
 
-            if request.args['op'][0] == "query":
-
-                if 'sql' not in obj:
-                    response_meta = { "response_op" : "error", "error_message" : "Must specify 'sql' param", "identity" : util.Identity.get_identity() }
-                    logging.info("HttpReceiver: Query received with no sql.")
-                    return json.dumps(response_meta)
-
-                try:
-                    self.process_sql_statement(obj["sql"], request)
-                    return NOT_DONE_YET
-
-                except Exception as e:
-                    logging.error('HttpReceiver: Error processing sql: %s: %s', str(e), obj["sql"])
-                    response_meta = { "response_op" : "error", "error_message" : str(e), "identity" : util.Identity.get_identity() }
-                    return json.dumps(response_meta)
+            except Exception as e:
+                logging.error('HttpReceiver: Error processing sql: %s: %s', str(e), obj["sql"])
+                response_meta = { "response_op" : "error", "error_message" : str(e), "identity" : util.Identity.get_identity() }
+                return json.dumps(response_meta)
 
 
         response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "Unrecognized operation" }

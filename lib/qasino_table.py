@@ -19,6 +19,9 @@ class QasinoTable(object):
     def zip_columns(self):
         return zip(self.column_names, self.column_types)
 
+    def set_tablename(self, tablename):
+        self.tablename = tablename
+
     def get_tablename(self):
         return self.tablename
 

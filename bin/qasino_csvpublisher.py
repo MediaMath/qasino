@@ -255,12 +255,23 @@ def read_and_send_tables(json_requestor, options):
             table_info[tablename]["error_msg"] = ''
             table_info[tablename]["read_epoch"] = time.time()
 
+            try:
+                filehandle = open(filepath, 'r')
+            except Exception as e:
+                nr_errors += 1
+                table_info[tablename]["nr_errors"] = 1
+                table_info[tablename]["error_msg"] = e.str()
+                logging.info("Failure reading csv file '%s': %s", filepath, error)
+                continue
+
             # Ignore the 2nd and 5th lines.  Names in 3rd, types in 4th.  The "version" in the first line is now the options list.
-            (table, error) = csv_table_reader.read_table(filepath, tablename,
+            (table, error) = csv_table_reader.read_table(filehandle, tablename,
                                                          skip_linenos={1, 4},
                                                          options_lineno=0,
                                                          types_lineno=3,
                                                          colnames_lineno=2)
+
+            filehandle.close()
 
             table_info[tablename]["read_time_s"] = time.time() - table_info[tablename]["read_epoch"]
 

@@ -30,32 +30,30 @@ class CsvTableReader(object):
         return True
 
 
-    def read_table(self, filename, tablename, 
+    def read_table(self, filehandle, tablename, 
                    colnames_lineno=1,
                    types_lineno=2,
                    options_lineno=-1,
+                   tablename_lineno=-1,
                    skip_linenos=set()):
 
-        # Open the file.
-    
-        try:
-            file = open(filename, 'r')
-        except Exception as e:
-            logging.error("Failed to open file '%s': %s", filename, e)
-            return (None, str(e))
-    
+   
         table = qasino_table.QasinoTable(tablename)
 
         column_names = None
         column_types = None
     
         try:
-            for lineno, line in enumerate(file):
+            for lineno, line in enumerate(filehandle):
 
                 line = line.rstrip('\n\r')
 
                 if lineno in skip_linenos:
                     continue
+
+                elif tablename_lineno != None and tablename_lineno == lineno:
+
+                    table.set_tablename(line)
 
                 elif options_lineno != None and options_lineno == lineno:
 
