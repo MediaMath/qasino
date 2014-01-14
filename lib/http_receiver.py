@@ -52,7 +52,8 @@ class HttpReceiver(Resource):
                 m = re.search(r'^([\w_]+)\.([\w_]+)$', name)
                 if m == None:
                     logging.info("HttpReciever: Invalid name in name value update: '%s'", name)
-                    return ''
+                    response_meta = { "response_op" : "error", "error_message" : "Invalid name in namve value update", "identity" : util.Identity.get_identity() }
+                    return json.dumps(response_meta)
 
                 tablename = m.group(1)
                 columnname = m.group(2)
@@ -66,6 +67,9 @@ class HttpReceiver(Resource):
                 table.set_property('persist', 1)
 
                 self.data_manager.sql_backend_writer.async_add_table_data(table, identity)
+
+                response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
+                return json.dumps(response_meta)
 
         ## Query op
 

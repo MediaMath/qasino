@@ -238,50 +238,37 @@ class SqlConnections(object):
 
         key_cols_str = table.get_property('keycols')
 
+        column_names = table.get_column_names()
+
         if key_cols_str == None:
-
-            # Make <column_name1>=?, <column_name2>=?, ...
-            set_pairs = "=?, ".join( table.get_column_names() ) + "=?"
-
-            sql = "UPDATE %s SET %s WHERE identity=?" % (table.get_tablename(), set_pairs)
-
-            # Use only the first row for now.
-            bind_values = [ x for x in table.get_row(0) ]
-            bind_values.append(identity)
-
-            txn.execute(sql, bind_values)
-
-            return txn.getconnection().changes()
+            key_column_names = column_names
         else:
-
             key_column_names = string.split(key_cols_str, ';')
-            column_names = table.get_column_names()
-            
-            tablename = table.get_tablename()
-            index_name = tablename + "_unique_index_" + '_'.join(key_column_names)
 
-            create_index_sql = "CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s)" % (index_name, tablename, ', '.join(key_column_names))
-            #logging.info("DEBUG: would execute: %s", create_index_sql)
+        tablename = table.get_tablename()
+        index_name = tablename + "_unique_index_" + '_'.join(key_column_names)
+
+        create_index_sql = "CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s)" % (index_name, tablename, ', '.join(key_column_names))
+        #logging.info("DEBUG: would execute: %s", create_index_sql)
+
+        try:
             txn.execute(create_index_sql)
+        except Exception as e:
+            logging.info("ERROR: Failed to create unique index for table update: '%s': ( %s )", str(e), create_index_sql)
+            return
 
-            try:
-                txn.execute(create_index_sql)
-            except Exception as e:
-                logging.info("ERROR: Failed to create unique index for table update: '%s': ( %s )", str(e), create_index_sql)
-                return
+        sql = "INSERT OR REPLACE INTO %s (%s) VALUES (%s)" % (tablename, ', '.join(column_names), ', '.join([ '?' for x in column_names ]) )
 
-            sql = "INSERT OR REPLACE INTO %s (%s) VALUES (%s)" % (tablename, ', '.join(column_names), ', '.join([ '?' for x in column_names ]) )
+        rowcount = 0
 
-            rowcount = 0
+        for row in table.get_rows():
 
-            for row in table.get_rows():
+            #logging.info("DEBUG: would execute: %s with %s", sql, row)
+            txn.execute(sql, row)
 
-                #logging.info("DEBUG: would execute: %s with %s", sql, row)
-                txn.execute(sql, row)
+            rowcount += txn.getconnection().changes()
 
-                rowcount += txn.getconnection().changes()
-
-            return rowcount
+        return rowcount
 
     def do_insert_table(self, txn, table):
         """

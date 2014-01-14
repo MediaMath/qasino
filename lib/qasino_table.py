@@ -67,7 +67,7 @@ class QasinoTable(object):
 
     def get_row(self, row_index):
         try:
-            return self.rows[index]
+            return self.rows[row_index]
         except:
             pass
         return []
