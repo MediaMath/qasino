@@ -161,7 +161,7 @@ if __name__ == '__main__':
     try:
         fh = open(filename)
     except Exception as e:
-        print "Failed to open '{}': {}".format(filename, e.str())
+        print "Failed to open '{}': {}".format(filename, str(e))
         exit(1)
 
     # Are we reading a csv table or a json table?
