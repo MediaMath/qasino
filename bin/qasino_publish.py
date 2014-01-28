@@ -70,7 +70,7 @@ def read_csv_table(filehandle, options):
                                                  colnames_lineno=2)
 
     if table == None:
-        print "Failure reading csv file '{}': {}".format(filepath, error)
+        print "Failure reading csv file: {}".format(error)
         return None
 
     return table

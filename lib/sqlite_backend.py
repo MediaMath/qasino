@@ -286,7 +286,7 @@ class SqlConnections(object):
         nr_values = 0
         bind_values = []
 
-        one_row = '(' + ','.join(['?'] * nr_columns) + ')'
+        one_row = '({})'.format(','.join(['?'] * nr_columns))
 
         sql = base_query
 
