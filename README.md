@@ -95,7 +95,7 @@ simply connect using telnet and send your query.
 
 Connect using bin/qasino_sqlclient.py.  This client uses ZeroMQ to
 send JSON formated messages to the server.  (It can also connect using
-a HTTPS given the --use-https option but that requires the right
+HTTPS given the --use-https option but that will require the right
 credentials to work).
 
     $ bin/qasino_sqlclient.py -H1.2.3.4
@@ -159,12 +159,65 @@ definition of a view can be found with 'DESC VIEW <viewname>;'
 
 ##Publishing
 
-Currently the only publishing client officially implemented is a CSV
-file publisher.  The CSV publisher takes an index file with a list of
-CSV files in it to publish and/or a index list file with a list of
-index files to process in the same manner.
+Currently the only publishing clients officially implemented are a CSV
+file publisher that is meant to run as an agent remotely and publishes
+CSV files as tables (qasino_csvpublisher.py) and a command line
+utility to publish one-offs from JSON or CSV input files (qasino_publish.py).
 
-###Index File Format
+All publishers must specify an "identity" which is a unique identifier
+that tells the server where the input table is coming from.  A given
+tablename can only be reported from the same identity once per
+reporting cycle but different identities can report rows for the same
+tablename - the results will be merged together.  
+
+A common paradigm is to make the identity the hostname or IP address
+of the machine reporting the rows.  In addition it is suggested to
+include a column in the table that indicates the same thing (identity,
+hostname or IP address).  In this way, two nifty things happen:
+
+1. All machines reporting rows for a common table (lets say 'table_foo') will be merged together.
+2. You can make queries that select by machine e.g. "SELECT * FROM table_foo WHERE identity IN ('1.2.3.4', '5.6.7.8');"
+
+###Schema Merging
+
+Typically all your publishers have the same schema for a given table
+but if its different (perhaps if you are rolling out a new release
+that adds columns to a table) the server will always add columns that
+don't already exist in the table.  The schema you will end up with
+will be a union of all the columns.  
+
+Changing types of an existing column is not recommended (there may be
+some undefined behavior).  Just add a new column with the different
+type.
+
+###Types
+
+CSV input tables (see below) support the following types (and are converted into the types in the JSON list below):
+- string (also str)
+- ip (alias for string)
+- float
+- integer (also int)
+- ll (alias for integer)
+- time (alias for integer)
+
+JSON input tables (see below) support the following types (which are sqlite types):
+- integer
+- real 
+- text
+
+###Qasino_csvpublisher.py
+
+qasino_csvpublisher.py takes an index file with a list of CSV files in
+it to publish and/or a index list file with a list of index files to
+process in the same way.  It runs until killed and monitors the
+indexes and tables they refer to for changes.  The data is continually
+published to the server every cycle so that the CSV content is always
+reflected in tables on the server.  The intent is so that applications
+or processes can simply drop properly formated CSV files into
+locations and they will automatically get loaded and published to the
+server.
+
+####Index File Format
 
 An index file starts with a version number followed by one or more CSV tables to publish.
 
@@ -186,7 +239,7 @@ So for example you might have an index file `myindex.csv` like the following:
     myapplication_table1
     myapplication_table2
 
-###CSV File Format
+####CSV File Format
 
 The CSV files contain the following format:
 
@@ -211,6 +264,13 @@ So for example you might create a file `myapplication_table1.csv`:
 And then you might run the csv publisher like this:
 
     python bin/qasino_csvpublisher.py --index myindex.csv --identity 1.2.3.4
+
+###Qasino_publish.py
+
+The command line utility qasino_publish.py reads from file or stdin an
+input table (CSV or JSON) and sends it via HTTP, HTTPS or ZeroMQ to a
+server.  Its largely meant as an example client but could be used in a
+cron or script.  See --help for more information.  See above for CSV file format.
 
 ###HTTP Publishing
 
