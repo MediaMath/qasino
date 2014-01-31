@@ -134,7 +134,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	object QasinoRequestIdentifier extends scala.Enumeration {
 		// Enumeration for all the JSON keys for qasino for safety
 		type QasinoRequestIdentifier = Value
-		val op, identity, table, tablename, column_names, column_types, rows = Value
+		val op, identity, tablename, column_names, column_types, rows = Value
 	}
 	import QasinoRequestIdentifier._
 
@@ -223,10 +223,10 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		groupColumnValues
 	}
 
-	def getJsonForMetric(metric: Metric): String = {
+	def getJsonForMetric(metric: Metric, name: String): String = {
 		// Get the qasino json data for any metric type
 		val postDataMap = defaultDataJson
-		postDataMap(tablename.toString) = metric.toString
+		postDataMap(tablename.toString) = name
 		postDataMap(column_names.toString) = setAsJavaSet(getColumnNames(metric))
 		postDataMap(column_types.toString) = seqAsJavaList(getColumnTypes(metric))
 		postDataMap(rows.toString) = seqAsJavaList(getColumnValues(metric))
@@ -263,6 +263,24 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		groupedMetrics
 	}
 
+	def getJsonForMetrics(nameToMetric: SortedMap[String, Metric]): Seq[String] = {
+		var jsonForMetrics = Seq.empty[String]
+		val groupedMetrics = groupMetrics(mapAsScalaMap(nameToMetric))
+		for ((prefix, metricMap) <- groupedMetrics) {
+			if (prefix.isEmpty) {
+				// No prefix, process this metric by itself
+				for ((name, metric) <- metricMap) {
+					jsonForMetrics = jsonForMetrics :+ getJsonForMetric(metric, name)
+				}
+			}
+			else {
+				// This metric is part of a group, all of whom should be reported together
+				jsonForMetrics = jsonForMetrics :+ getGroupedJson(groupedMetrics, prefix)
+			}
+		}
+		jsonForMetrics
+	}
+
 	override def report (
 			gauges: JavaSortedMap[String, Gauge[_]],
 			counters: JavaSortedMap[String, Counter],
@@ -270,14 +288,16 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 			meters: JavaSortedMap[String, Meter],
 			timers: JavaSortedMap[String, Timer]) {
 
-		for(nameToMetric <- Seq(gauges, counters, histograms, meters, timers)) {
+		//for(nameToMetric <- Seq[SortedMap[String, Meter]](gauges, counters, histograms, meters, timers)) {
+		val metricMapList = List(gauges, counters, histograms, meters, timers)
+		for(nameToMetric <- metricMapList.map(m => mapAsScalaMap(m))) {
 			// Generate the JSON data and send the POST request to the qasino daemon
 			val groupedMetrics = groupMetrics(mapAsScalaMap(nameToMetric))
 			for ((prefix, metricMap) <- groupedMetrics) {
 				if (prefix.isEmpty) {
 					// No prefix, process this metric by itself
 					for ((name, metric) <- metricMap) {
-						val postDataJson = getJsonForMetric(metric)
+						val postDataJson = getJsonForMetric(metric, name)
 						val postWithParams = dispatchRequest << postDataJson
 						dispatch.Http(postWithParams OK as.String)
 					}
