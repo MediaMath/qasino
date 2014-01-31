@@ -4,11 +4,12 @@ import com.codahale.metrics._
 import com.fasterxml.jackson.databind.ObjectMapper
 import dispatch._
 import Defaults._
-import java.util
 import java.util.concurrent.TimeUnit
 import scala.collection
-import scala.collection.JavaConversions.{mapAsScalaMap, asScalaSet, mapAsJavaMap, setAsJavaSet, seqAsJavaList}
+import scala.collection.JavaConversions._
 import java.net.InetAddress
+import collection._
+import java.util.{SortedMap => JavaSortedMap}
 
 /**
  * Created by dpowell on 1/26/14.
@@ -16,13 +17,11 @@ import java.net.InetAddress
 
 object QasinoReporter {
 	val registryNameSeparator = "_"
+	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
 
 	def sanitizeRegistryName(name: String): String = {
 		// Remove any instances of the illegal characters from the name
-		var sanitizedName = name.toLowerCase
-		val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
-		sanitizedName = illegalCharRegex.replaceAllIn(sanitizedName, registryNameSeparator)
-		sanitizedName
+		illegalCharRegex.replaceAllIn(name.toLowerCase, registryNameSeparator)
 	}
 
 	def sanitizeRegistry(registry: MetricRegistry): MetricRegistry = {
@@ -43,14 +42,14 @@ class QasinoReporterBuilder (
 		var secure: Boolean = false,
 		var uri: String = "/request?op=add_table_data",
 		var name: String = "QasinoReporter",
-		var gaugeGroups: collection.Set[String] = collection.SortedSet.empty,
+		var gaugeGroups: Set[String] = SortedSet.empty,
 		var filter: MetricFilter = MetricFilter.ALL,
 		var rateUnit: TimeUnit = TimeUnit.SECONDS,
 		var durationUnit: TimeUnit = TimeUnit.MILLISECONDS) {
 
-	def registryHasCollisions: Boolean = {
+	private[this] def registryHasCollisions: Boolean = {
 		// Check whether we have any name collisions after some sanitizing
-		val namesSet = collection.mutable.Set[String]()
+		val namesSet = mutable.Set[String]()
 		val registryNames = registry.getNames
 		for (name <- asScalaSet(registryNames)) {
 			val sanitizedName = QasinoReporter.sanitizeRegistryName(name)
@@ -89,7 +88,7 @@ class QasinoReporterBuilder (
 		this
 	}
 
-	def withGaugeGroups(gaugeGroups: collection.Set[String]): QasinoReporterBuilder = {
+	def withGaugeGroups(gaugeGroups: Set[String]): QasinoReporterBuilder = {
 		this.gaugeGroups = gaugeGroups
 		this
 	}
@@ -102,7 +101,7 @@ class QasinoReporterBuilder (
 	def build(): QasinoReporter = {
 		if (registryHasCollisions) {
 			throw new IllegalArgumentException(
-				"Found a collision within registry names after sanitization"
+				"Found a collision within registry names after sanitation"
 			)
 		}
 		registry = QasinoReporter.sanitizeRegistry(registry)
@@ -118,7 +117,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	val secure: Boolean = builder.secure
 	val uri: String = builder.uri
 	val name: String = builder.name
-	val gaugeGroups: collection.Set[String] = builder.gaugeGroups
+	val gaugeGroups: Set[String] = builder.gaugeGroups
 	val filter: MetricFilter = builder.filter
 	val rateUnit: TimeUnit = builder.rateUnit
 	val durationUnit: TimeUnit = builder.durationUnit
@@ -140,7 +139,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	import QasinoRequestIdentifier._
 
 	// Default map for JSON
-	private val defaultDataJson = collection.mutable.Map[String, Any](
+	private val defaultDataJson = mutable.Map[String, Any](
 		op.toString -> "add_table_data",
 		tablename.toString -> Unit,
 		column_names.toString-> Unit,
@@ -148,27 +147,27 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		identity.toString -> inetAddr.toString // This provides the hostname and IP joined by a forward slash
 	)
 
-	// Just shorthand for a two dimensional map of any type
-	type TwoDMap[K1, K2, Val] = collection.Map[K1, collection.Map[K2, Val]]
+	// Shorthand for a two dimensional map of any type
+	type TwoDMap[K1, K2, Val] = Map[K1, Map[K2, Val]]
 
-	def getColumnNames(metric: Metric, prefixWithSeparator: String = ""): collection.SortedSet[String] = metric match {
+	def getColumnNames(metric: Metric, prefixWithSeparator: String = ""): SortedSet[String] = metric match {
 		// Get the qasino column names for any metric type
 		case gauge: Gauge[_] =>
-			collection.SortedSet("value") map {prefixWithSeparator + _}
+			SortedSet("value") map {prefixWithSeparator + _}
 		case _: Counter =>
-			collection.SortedSet("count") map {prefixWithSeparator + _}
+			SortedSet("count") map {prefixWithSeparator + _}
 		case _: Histogram =>
-			collection.SortedSet("min", "max", "mean", "median") map {prefixWithSeparator + _}
+			SortedSet("min", "max", "mean", "median") map {prefixWithSeparator + _}
 		case _: Meter =>
-			collection.SortedSet("one_minute_rate", "five_minute_rate", "fifteen_minute_rate", "mean_rate") map {prefixWithSeparator + _}
+			SortedSet("one_minute_rate", "five_minute_rate", "fifteen_minute_rate", "mean_rate") map {prefixWithSeparator + _}
 		case _: Timer =>
-			collection.SortedSet("one_minute_rate", "five_minute_rate", "fifteen_minute_rate", "mean_rate") map {prefixWithSeparator + _}
-		case _ => collection.SortedSet.empty[String]
+			SortedSet("one_minute_rate", "five_minute_rate", "fifteen_minute_rate", "mean_rate") map {prefixWithSeparator + _}
+		case _ => SortedSet.empty[String]
 	}
 
 	def getGroupedColumnNames(groupedMetrics: TwoDMap[String, String, Metric], prefix: String):
-			collection.SortedSet[String] = {
-		var groupColumnNames = collection.SortedSet.empty[String]
+			SortedSet[String] = {
+		var groupColumnNames = SortedSet.empty[String]
 		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
 		for ((suffix, metric) <- metricMap) {
 			val thisMetricColumnNames = getColumnNames(metric, suffix + "_")
@@ -244,31 +243,32 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
-	def groupMetrics(metrics: collection.Map[String, Metric]): TwoDMap[String, String, Metric] = {
-		var groupedMetrics: TwoDMap[String, String, Metric] = collection.Map.empty
+	def groupMetrics(metrics: Map[String, Metric]): TwoDMap[String, String, Metric] = {
+		var groupedMetrics: TwoDMap[String, String, Metric] = Map.empty
+		val emptryString = ""
 		for ((name, metric) <- metrics) {
-			var thisGaugeGroup = ""
 			// Match groups going by longest group name to shortest
-			for (gaugeGroup <- gaugeGroups.toSeq.sortBy(_.length).reverse if thisGaugeGroup.isEmpty) {
-				if (name.startsWith(gaugeGroup + "_")) {
-					thisGaugeGroup = gaugeGroup
-				}
+			val thisGaugeGroup: Option[String] =
+				gaugeGroups.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
+			val suffix: String = if (thisGaugeGroup.isDefined) {
+				// Add one to the length for the separator
+				name.drop(thisGaugeGroup.get.length + 1)
 			}
-			// Dropping plus one for the separator if we are grouping/have thisGaugeGroup
-			val suffix: String = if (thisGaugeGroup.length > 0) name.drop(thisGaugeGroup.length + 1) else name
-			var subgroupedMetrics: collection.Map[String, Metric] = groupedMetrics.getOrElse(thisGaugeGroup, Map.empty)
+			else name
+			var subgroupedMetrics: Map[String, Metric] = groupedMetrics
+				.getOrElse(thisGaugeGroup.getOrElse(emptryString), Map.empty)
 			subgroupedMetrics = subgroupedMetrics + (suffix -> metric)
-			groupedMetrics = groupedMetrics + (thisGaugeGroup -> subgroupedMetrics)
+			groupedMetrics = groupedMetrics + (thisGaugeGroup.getOrElse(emptryString) -> subgroupedMetrics)
 		}
 		groupedMetrics
 	}
 
 	override def report (
-			gauges: util.SortedMap[String, Gauge[_]],
-			counters: util.SortedMap[String, Counter],
-			histograms: util.SortedMap[String, Histogram],
-			meters: util.SortedMap[String, Meter],
-			timers: util.SortedMap[String, Timer]) {
+			gauges: JavaSortedMap[String, Gauge[_]],
+			counters: JavaSortedMap[String, Counter],
+			histograms: JavaSortedMap[String, Histogram],
+			meters: JavaSortedMap[String, Meter],
+			timers: JavaSortedMap[String, Timer]) {
 
 		for(nameToMetric <- Seq(gauges, counters, histograms, meters, timers)) {
 			// Generate the JSON data and send the POST request to the qasino daemon
@@ -279,18 +279,14 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 					for ((name, metric) <- metricMap) {
 						val postDataJson = getJsonForMetric(metric)
 						val postWithParams = dispatchRequest << postDataJson
-						val response = dispatch.Http(postWithParams OK as.String)
-						for (r <- response) println(r)
-						println(name + ": " + metric)
+						dispatch.Http(postWithParams OK as.String)
 					}
 				}
 				else {
 					// This metric is part of a group, all of whom should be reported together
 					val postDataJson = getGroupedJson(groupedMetrics, prefix)
 					val postWithParams = dispatchRequest << postDataJson
-					val response = dispatch.Http(postWithParams OK as.String)
-					for (r <- response) println(r)
-					println(name + ": (prefix): " + prefix)
+					dispatch.Http(postWithParams OK as.String)
 				}
 			}
 		}
