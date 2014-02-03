@@ -10,6 +10,7 @@ import scala.collection.JavaConversions._
 import java.net.InetAddress
 import collection._
 import java.util.{SortedMap => JavaSortedMap}
+import java.util
 
 /**
  * Created by dpowell on 1/26/14.
@@ -281,6 +282,13 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		jsonForMetrics
 	}
 
+	def reportToQasino(nameToMetric: SortedMap[String, Metric]) {
+		for (jsonStr <- getJsonForMetrics(nameToMetric)) {
+			val postWithParams = dispatchRequest << jsonStr
+			dispatch.Http(postWithParams OK as.String)
+		}
+	}
+
 	override def report (
 			gauges: JavaSortedMap[String, Gauge[_]],
 			counters: JavaSortedMap[String, Counter],
@@ -288,28 +296,11 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 			meters: JavaSortedMap[String, Meter],
 			timers: JavaSortedMap[String, Timer]) {
 
-		//for(nameToMetric <- Seq[SortedMap[String, Meter]](gauges, counters, histograms, meters, timers)) {
-		val metricMapList = List(gauges, counters, histograms, meters, timers)
-		for(nameToMetric <- metricMapList.map(m => mapAsScalaMap(m))) {
-			// Generate the JSON data and send the POST request to the qasino daemon
-			val groupedMetrics = groupMetrics(mapAsScalaMap(nameToMetric))
-			for ((prefix, metricMap) <- groupedMetrics) {
-				if (prefix.isEmpty) {
-					// No prefix, process this metric by itself
-					for ((name, metric) <- metricMap) {
-						val postDataJson = getJsonForMetric(metric, name)
-						val postWithParams = dispatchRequest << postDataJson
-						dispatch.Http(postWithParams OK as.String)
-					}
-				}
-				else {
-					// This metric is part of a group, all of whom should be reported together
-					val postDataJson = getGroupedJson(groupedMetrics, prefix)
-					val postWithParams = dispatchRequest << postDataJson
-					dispatch.Http(postWithParams OK as.String)
-				}
-			}
-		}
+		reportToQasino(SortedMap(gauges.toSeq: _*))
+		reportToQasino(SortedMap(counters.toSeq: _*))
+		reportToQasino(SortedMap(histograms.toSeq: _*))
+		reportToQasino(SortedMap(meters.toSeq: _*))
+		reportToQasino(SortedMap(timers.toSeq: _*))
 	}
 }
 
