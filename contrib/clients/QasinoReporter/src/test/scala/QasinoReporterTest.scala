@@ -82,12 +82,18 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 		}
 	}
 
-	// TODO: make a test that shows we can add all different types
-	//class IntGauge(value: Int) extends Gauge[Int] {
-	//	def getValue = value
+	//{
+	//	// TODO: make a test that shows we can add all different types
+	//	//class IntGauge(value: Int) extends Gauge[Int] {
+	//	//	def getValue = value
+	//	//}
+	//	val metrics = new MetricRegistry
+	//	val gauge1 = metrics.register("gauge1", new IntGauge(100) extends Gauge[Int] {
+	//		override def getValue = value
+	//	})
+	//	}
+	//	val histogram1 = new Histogram()
+	//	val meter1 = new Meter()
+	//	val timer1 = new Timer()
 	//}
-	//val gauge1 = new IntGauge(100)
-	//val histogram1 = new Histogram()
-	//val meter1 = new Meter()
-	//val timer1 = new Timer()
 }

@@ -10,7 +10,6 @@ import scala.collection.JavaConversions._
 import java.net.InetAddress
 import collection._
 import java.util.{SortedMap => JavaSortedMap}
-import java.util
 
 /**
  * Created by dpowell on 1/26/14.
@@ -20,6 +19,8 @@ object QasinoReporter {
 	val registryNameSeparator = "_"
 	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
 
+	// TODO: need to check for whether table name will begin with numbers
+	// TODO: since this is not a valid sqlite table naming format
 	def sanitizeRegistryName(name: String): String = {
 		// Remove any instances of the illegal characters from the name
 		illegalCharRegex.replaceAllIn(name.toLowerCase, registryNameSeparator)
@@ -41,7 +42,8 @@ class QasinoReporterBuilder (
 		var host: String = "127.0.0.1",
 		var port: Int = 80,
 		var secure: Boolean = false,
-		var uri: String = "/request?op=add_table_data",
+		var uri: String = "request",
+		var op: String = "add_table_data",
 		var name: String = "QasinoReporter",
 		var gaugeGroups: Set[String] = SortedSet.empty,
 		var filter: MetricFilter = MetricFilter.ALL,
@@ -69,6 +71,7 @@ class QasinoReporterBuilder (
 		this
 	}
 
+	// TODO: rename withHost
 	def withDest(host: String): QasinoReporterBuilder = {
 		this.host = host
 		this
@@ -81,6 +84,11 @@ class QasinoReporterBuilder (
 
 	def withUri(uri: String): QasinoReporterBuilder = {
 		this.uri = uri
+		this
+	}
+
+	def withOp(op: String): QasinoReporterBuilder = {
+		this.op = op
 		this
 	}
 
@@ -117,6 +125,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	val port: Int = builder.port
 	val secure: Boolean = builder.secure
 	val uri: String = builder.uri
+	val op: String = builder.op
 	val name: String = builder.name
 	val gaugeGroups: Set[String] = builder.gaugeGroups
 	val filter: MetricFilter = builder.filter
@@ -125,7 +134,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 
 	// Set up Dispatch HTTP client
 	private val dispatchHost = if (secure) dispatch.host(host, port).secure else dispatch.host(host, port)
-	private val dispatchRequest = (dispatchHost / uri).POST
+	private val dispatchRequest = (dispatchHost / uri).POST <<? Map("op" -> op)
 
 	val inetAddr = InetAddress.getLocalHost
 
@@ -135,17 +144,19 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	object QasinoRequestIdentifier extends scala.Enumeration {
 		// Enumeration for all the JSON keys for qasino for safety
 		type QasinoRequestIdentifier = Value
-		val op, identity, tablename, column_names, column_types, rows = Value
+		val op, identity, tablename, table, column_names, column_types, rows = Value
 	}
 	import QasinoRequestIdentifier._
 
 	// Default map for JSON
 	private val defaultDataJson = mutable.Map[String, Any](
 		op.toString -> "add_table_data",
-		tablename.toString -> Unit,
-		column_names.toString-> Unit,
-		column_types.toString -> Unit,
-		identity.toString -> inetAddr.toString // This provides the hostname and IP joined by a forward slash
+		identity.toString -> inetAddr.toString, // This provides the hostname and IP joined by a forward slash
+		table.toString -> mutable.Map[String, Any](
+			tablename.toString -> Unit,
+			column_names.toString-> Unit,
+			column_types.toString -> Unit
+		)
 	)
 
 	// Shorthand for a two dimensional map of any type
@@ -226,21 +237,41 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 
 	def getJsonForMetric(metric: Metric, name: String): String = {
 		// Get the qasino json data for any metric type
-		val postDataMap = defaultDataJson
-		postDataMap(tablename.toString) = name
-		postDataMap(column_names.toString) = setAsJavaSet(getColumnNames(metric))
-		postDataMap(column_types.toString) = seqAsJavaList(getColumnTypes(metric))
-		postDataMap(rows.toString) = seqAsJavaList(getColumnValues(metric))
+		var postDataMap = defaultDataJson
+		val col_names = setAsJavaSet(getColumnNames(metric))
+		val col_types = seqAsJavaList(getColumnTypes(metric))
+		val r = java.util.Arrays.asList(seqAsJavaList(getColumnValues(metric)))
+		val tableMap = mutable.Map[String, Any](
+			tablename.toString -> name,
+			column_names.toString -> col_names,
+			column_types.toString -> col_types,
+			rows.toString -> r
+		)
+		postDataMap = postDataMap + (table.toString -> mapAsJavaMap(tableMap))
+		//postDataMap(tablename.toString) = name
+		//postDataMap(column_names.toString) = setAsJavaSet(getColumnNames(metric))
+		//postDataMap(column_types.toString) = seqAsJavaList(getColumnTypes(metric))
+		//postDataMap(rows.toString) = seqAsJavaList(getColumnValues(metric))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
 	def getGroupedJson(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): String = {
 		// Get the qasino json data for any grouped metric type
-		val postDataMap = defaultDataJson
-		postDataMap(tablename.toString) = prefix
-		postDataMap(column_names.toString) = setAsJavaSet(getGroupedColumnNames(groupedMetrics, prefix))
-		postDataMap(column_types.toString) = seqAsJavaList(getGroupedColumnTypes(groupedMetrics, prefix))
-		postDataMap(rows.toString) = seqAsJavaList(getGroupedColumnValues(groupedMetrics, prefix))
+		var postDataMap = defaultDataJson
+		val col_names = setAsJavaSet(getGroupedColumnNames(groupedMetrics, prefix))
+		val col_types =  seqAsJavaList(getGroupedColumnTypes(groupedMetrics, prefix))
+		val r = java.util.Arrays.asList(seqAsJavaList(getGroupedColumnValues(groupedMetrics, prefix)))
+		val tableMap = mutable.Map[String, Any](
+			tablename.toString -> prefix,
+			column_names.toString -> col_names,
+			column_types.toString -> col_types,
+			rows.toString -> r
+		)
+		postDataMap = postDataMap + (table.toString -> mapAsJavaMap(tableMap))
+		//postDataMap(tablename.toString) = prefix
+		//postDataMap(column_names.toString) = setAsJavaSet(getGroupedColumnNames(groupedMetrics, prefix))
+		//postDataMap(column_types.toString) = seqAsJavaList(getGroupedColumnTypes(groupedMetrics, prefix))
+		//postDataMap(rows.toString) = seqAsJavaList(getGroupedColumnValues(groupedMetrics, prefix))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
