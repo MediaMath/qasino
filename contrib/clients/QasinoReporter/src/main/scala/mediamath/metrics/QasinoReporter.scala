@@ -10,10 +10,7 @@ import scala.collection.JavaConversions._
 import java.net.{Inet4Address, NetworkInterface, InetAddress}
 import collection._
 import java.util.{SortedMap => JavaSortedMap}
-
-/**
- * Created by dpowell on 1/26/14.
- */
+import scala.language.existentials
 
 object QasinoReporter {
 	val registryNameSeparator = "_"
@@ -51,14 +48,14 @@ object QasinoReporter {
 
 class QasinoReporterBuilder (
 		var registry: MetricRegistry = new MetricRegistry,
-		var host: String = "127.0.0.1",
+		var host: String = "localhost",
 		var port: Int = 80,
 		var secure: Boolean = false,
 		var uri: String = "request",
 		var db_op: String = "add_table_data",
 		var name: String = "QasinoReporter",
 		var db_persist: Boolean = false,
-		var gaugeGroups: Set[String] = SortedSet.empty,
+		var groupings: Set[String] = SortedSet.empty,
 		var filter: MetricFilter = MetricFilter.ALL,
 		var rateUnit: TimeUnit = TimeUnit.SECONDS,
 		var durationUnit: TimeUnit = TimeUnit.MILLISECONDS) {
@@ -77,10 +74,10 @@ class QasinoReporterBuilder (
 	private def hasIllegalColumnNames: Boolean = {
 		var hasIllegalColName = false
 		for (name <- registry.getNames if !hasIllegalColName) {
-			val thisGaugeGroup: Option[String] =
-				gaugeGroups.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
-			val suffix: String = if (thisGaugeGroup.isDefined) {
-				name.drop(thisGaugeGroup.get.length + 1)
+			val thisGrouping: Option[String] =
+				groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
+			val suffix: String = if (thisGrouping.isDefined) {
+				name.drop(thisGrouping.get.length + 1)
 			}
 			else name
 			hasIllegalColName = suffix.matches("^[^A-Za-z].*")
@@ -128,8 +125,8 @@ class QasinoReporterBuilder (
 		this
 	}
 
-	def withGaugeGroups(gaugeGroups: Set[String]): QasinoReporterBuilder = {
-		this.gaugeGroups = gaugeGroups
+	def withGroupings(groupings: Set[String]): QasinoReporterBuilder = {
+		this.groupings = groupings
 		this
 	}
 
@@ -164,7 +161,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	val db_op: String = builder.db_op
 	val db_persist: Boolean = builder.db_persist
 	val name: String = builder.name
-	val gaugeGroups: Set[String] = builder.gaugeGroups
+	val groupings: Set[String] = builder.groupings
 	val filter: MetricFilter = builder.filter
 	val rateUnit: TimeUnit = builder.rateUnit
 	val durationUnit: TimeUnit = builder.durationUnit
@@ -249,10 +246,9 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		case gauge: Gauge[_] =>
 			Array(gauge.getValue.toString)
 		case counter: Counter => Array(counter.getCount)
-		case histogram: Histogram => {
+		case histogram: Histogram =>
 			val snap = histogram.getSnapshot
 			Array(snap.getMin, snap.getMax, snap.getMean, snap.getMedian)
-		}
 		case meter: Meter =>
 			Array(meter.getOneMinuteRate, meter.getFiveMinuteRate, meter.getFifteenMinuteRate, meter.getMeanRate)
 		case timer: Timer =>
@@ -283,10 +279,6 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 			rows.toString -> r
 		)
 		postDataMap = postDataMap + (table.toString -> mapAsJavaMap(tableMap))
-		//postDataMap(tablename.toString) = name
-		//postDataMap(column_names.toString) = setAsJavaSet(getColumnNames(metric))
-		//postDataMap(column_types.toString) = seqAsJavaList(getColumnTypes(metric))
-		//postDataMap(rows.toString) = seqAsJavaList(getColumnValues(metric))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
@@ -303,10 +295,6 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 			rows.toString -> r
 		)
 		postDataMap = postDataMap + (table.toString -> mapAsJavaMap(tableMap))
-		//postDataMap(tablename.toString) = prefix
-		//postDataMap(column_names.toString) = setAsJavaSet(getGroupedColumnNames(groupedMetrics, prefix))
-		//postDataMap(column_types.toString) = seqAsJavaList(getGroupedColumnTypes(groupedMetrics, prefix))
-		//postDataMap(rows.toString) = seqAsJavaList(getGroupedColumnValues(groupedMetrics, prefix))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
@@ -315,17 +303,17 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		val emptryString = ""
 		for ((name, metric) <- metrics) {
 			// Match groups going by longest group name to shortest
-			val thisGaugeGroup: Option[String] =
-				gaugeGroups.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
-			val suffix: String = if (thisGaugeGroup.isDefined) {
+			val thisGrouping: Option[String] =
+				groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
+			val suffix: String = if (thisGrouping.isDefined) {
 				// Add one to the length for the separator
-				name.drop(thisGaugeGroup.get.length + 1)
+				name.drop(thisGrouping.get.length + 1)
 			}
 			else name
 			var subgroupedMetrics: Map[String, Metric] = groupedMetrics
-				.getOrElse(thisGaugeGroup.getOrElse(emptryString), Map.empty)
+				.getOrElse(thisGrouping.getOrElse(emptryString), Map.empty)
 			subgroupedMetrics = subgroupedMetrics + (suffix -> metric)
-			groupedMetrics = groupedMetrics + (thisGaugeGroup.getOrElse(emptryString) -> subgroupedMetrics)
+			groupedMetrics = groupedMetrics + (thisGrouping.getOrElse(emptryString) -> subgroupedMetrics)
 		}
 		groupedMetrics
 	}
@@ -355,6 +343,19 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		}
 	}
 
+	def combineMetricsToMap(
+		 gauges: JavaSortedMap[String, Gauge[_]] = registry.getGauges,
+		 counters: JavaSortedMap[String, Counter] = registry.getCounters,
+		 histograms: JavaSortedMap[String, Histogram] = registry.getHistograms,
+		 meters: JavaSortedMap[String, Meter] = registry.getMeters,
+		 timers: JavaSortedMap[String, Timer] = registry.getTimers): SortedMap[String, Metric] = {
+		SortedMap(gauges.toSeq: _*) ++
+		SortedMap(counters.toSeq: _*) ++
+		SortedMap(histograms.toSeq: _*) ++
+		SortedMap(meters.toSeq: _*) ++
+		SortedMap(timers.toSeq: _*)
+	}
+
 	override def report (
 			gauges: JavaSortedMap[String, Gauge[_]],
 			counters: JavaSortedMap[String, Counter],
@@ -362,22 +363,6 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 			meters: JavaSortedMap[String, Meter],
 			timers: JavaSortedMap[String, Timer]) {
 
-		reportToQasino(SortedMap(gauges.toSeq: _*))
-		reportToQasino(SortedMap(counters.toSeq: _*))
-		reportToQasino(SortedMap(histograms.toSeq: _*))
-		reportToQasino(SortedMap(meters.toSeq: _*))
-		reportToQasino(SortedMap(timers.toSeq: _*))
+		reportToQasino(combineMetricsToMap(gauges, counters, histograms, meters, timers))
 	}
 }
-
-/* Some test code for the REPL follows
-import com.codahale.metrics.{Counter, MetricRegistry}
-var metrics = new MetricRegistry
-var counter1 = new Counter
-var counter2 = new Counter
-metrics.register(MetricRegistry.name("testing.abc"), counter1)
-counter2.inc(100)
-metrics.register(MetricRegistry.name("testing-def"), counter2)
-var reporter = new mediamath.metrics.QasinoReporterBuilder().withPersist().withHost("www.imadethatcow.com").withName("testing123").withRegistry(metrics).withGaugeGroups(Set("testing")).build()
-reporter.report()
- */ // TODO: remove this test code
