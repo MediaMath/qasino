@@ -1,36 +1,52 @@
 Qasino
 ======
 
-Qasino is a stats server that supports tabular stats stored in a
-database for querying with SQL.  Stats are snapshots, meaning only the
-latest stats reported for a given table are available in the database.
-The full flexiblity of SQL including joining, filtering and
-aggregation are availble on all stats in the system.  Multiple data
-tables of the same name are merged automatically into a single
-queryable table on the server.
+Qasino is a stats server that supports stats stored as tables in a
+database for querying with SQL.  Unlike a conventional database, stats
+do not accumulate over time (which would make querying the stats more
+difficult).  Instead Qasino keeps only the most recent set of stats
+reported.  The full flexiblity of SQL including joining, filtering and
+aggregation are availble to analyze the current state of your network.
+Stats reported from different systems but using the same table name
+are merged automatically into a single table.  In addition schemas are
+automatically created and updated based on the incoming updates
+requiring zero maintanence.
 
-Many stats systems provide history for stats but not a good way to
-join, correlate or connect stats together.  Qasino does not provide
-history (directly) but does make it really easy to correlate and cross
-reference stats together.
+Many stats systems provide history for stats but lack an effective way
+to join, correlate or connect stats together.  Qasino does not
+(directly) keep a history of stats but does make it really easy to
+correlate and cross reference stats together.
 
-Sometimes you just want to know the current state of your systems and
-Qasino excels at giving you that information.  You can report anything
-and formulate queries to connect different stats together.  For
-example, cpu usage along with ops per second.  Or configuration files
-with the md5sum of each.
+Sometimes you want to know the current state of your systems and that
+might include more then just numerical data.  Qasino excels at giving
+you that information.  You can report a richer set of data such as
+text data, datetimes or multi-row relationships.  For example, cpu
+usage and ops per second, or configuration files with the md5sum of
+each and current timestamp.
 
-Qasino provides interfaces to publish tables to it but has no built-in
-facilities for collecting stats.  Applications need to provide the
-stats and publish via ZMQ, HTTP or CSV file.  In the future there will
-be integration with stat collectors like Statsd, Diamond and Graphite.
+Qasino primarily is a server process.  It exposes interfaces to
+publish tables to it using a JSON API via HTTP or ZeroMQ.  There is a
+simple CLI client to connect to Qasino and run queries.  There is a
+simple command line table publisher that can read input tables as CSV
+or JSON.  And there is a more advanced publisher client meant to run
+as an agent that dynamically publishes CSV files.
 
-Currently qasino is implemented in Python using the Twisted framework
+In the future there will be integration with stat collectors like
+Statsd, Diamond and Graphite.
+
+Currently Qasino is implemented in Python using the Twisted framework
 and HTTP and ZeroMQ transports with Sqlite for the backend data store.
+
+Qasino was inspired by the monitoring system used at Akamai
+Technologies called Query.  More information can be found 
+[here](http://www.akamai.com/dl/technical_publications/lisa_2010.pdf "Keeping Track of 70,000+ Servers: The Akamai Query System") 
+and [here](http://www.akamai.com/dl/technical_publications/query_osr.pdf "Scaling a Monitoring Infrastructure for the Akamai Network").
+Qasino provides similar functionality but for much smaller scale environments.
 
 ##Installation
 
 You'll need to have the following python libraries installed:
+
 - python-twisted
 - python-zmq
 - python-simplejson
