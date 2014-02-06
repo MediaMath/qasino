@@ -49,7 +49,7 @@ object QasinoReporter {
 class QasinoReporterBuilder (
 		var registry: MetricRegistry = new MetricRegistry,
 		var host: String = "localhost",
-		var port: Int = 80,
+		var port: Int = 15597,
 		var secure: Boolean = false,
 		var uri: String = "request",
 		var db_op: String = "add_table_data",
@@ -153,7 +153,7 @@ class QasinoReporterBuilder (
 
 class QasinoReporter(builder: QasinoReporterBuilder) extends
 		ScheduledReporter(builder.registry, builder.name, builder.filter, builder.rateUnit, builder.durationUnit) {
-	val registry: MetricRegistry = builder.registry
+	val registry:MetricRegistry = builder.registry
 	val host: String = builder.host
 	val port: Int = builder.port
 	val secure: Boolean = builder.secure
@@ -356,7 +356,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		SortedMap(timers.toSeq: _*)
 	}
 
-	override def report (
+  override def report (
 			gauges: JavaSortedMap[String, Gauge[_]],
 			counters: JavaSortedMap[String, Counter],
 			histograms: JavaSortedMap[String, Histogram],
