@@ -153,7 +153,7 @@ class QasinoReporterBuilder (
 
 class QasinoReporter(builder: QasinoReporterBuilder) extends
 		ScheduledReporter(builder.registry, builder.name, builder.filter, builder.rateUnit, builder.durationUnit) {
-	val registry:MetricRegistry = builder.registry
+	val registry: MetricRegistry = builder.registry
 	val host: String = builder.host
 	val port: Int = builder.port
 	val secure: Boolean = builder.secure
