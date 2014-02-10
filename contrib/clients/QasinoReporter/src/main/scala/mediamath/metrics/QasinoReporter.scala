@@ -11,6 +11,7 @@ import java.net.{Inet4Address, NetworkInterface, InetAddress}
 import collection._
 import java.util.{SortedMap => JavaSortedMap}
 import scala.language.existentials
+import scala.collection.immutable.ListMap
 
 object QasinoReporter {
 	val registryNameSeparator = "_"
@@ -44,127 +45,143 @@ object QasinoReporter {
 		}
 		address
 	}
+
+  def forRegistry(registry: MetricRegistry): Builder.type = {
+    Builder.registry = registry
+    Builder
+  }
+
+  object Builder {
+    var registry: MetricRegistry = new MetricRegistry
+    var host: String = "localhost"
+    var port: Int = 15597
+    var secure: Boolean = false
+    var uri: String = "request"
+    var db_op: String = "add_table_data"
+    var name: String = "QasinoReporter"
+    var db_persist: Boolean = false
+    var groupings: Set[String] = SortedSet.empty
+    var filter: MetricFilter = MetricFilter.ALL
+    var rateUnit: TimeUnit = TimeUnit.SECONDS
+    var durationUnit: TimeUnit = TimeUnit.MILLISECONDS
+
+    def withPort(port: Int): this.type = {
+      Builder.port = port
+      this
+    }
+
+    def withHost(host: String): this.type = {
+      Builder.host = host
+      this
+    }
+
+    def secure(secure: Boolean = true): this.type = {
+      Builder.secure = secure
+      this
+    }
+
+    def withUri(uri: String): this.type = {
+      Builder.uri = uri
+      this
+    }
+
+    def withOp(db_op: String): this.type = {
+      Builder.db_op = db_op
+      this
+    }
+
+    def withName(name: String): this.type = {
+      Builder.name = name
+      this
+    }
+
+    def withPersist(db_persist: Boolean = true): this.type = {
+      Builder.db_persist = db_persist
+      this
+    }
+
+    def withGroupings(groupings: Set[String]): this.type = {
+      Builder.groupings = groupings
+      this
+    }
+
+    def withFilter(filter: MetricFilter): this.type = {
+      Builder.filter = filter
+      this
+    }
+
+    def convertRatesTo(rateUnit: TimeUnit): this.type = {
+      Builder.rateUnit = rateUnit
+      this
+    }
+
+    def convertDurationsTo(durationUnit: TimeUnit): this.type = {
+      Builder.durationUnit = durationUnit
+      this
+    }
+
+    def build(): QasinoReporter = {
+      Builder.registry = QasinoReporter.sanitizeRegistry(Builder.registry)
+      if (registryHasCollisions) {
+        throw new IllegalArgumentException(
+          "Found a collision within registry names after sanitation"
+        )
+      }
+      if (hasIllegalColumnNames) {
+        throw new IllegalArgumentException(
+          "Found a column beginning with a non-alpha character"
+        )
+      }
+      new QasinoReporter
+    }
+  }
+
+  private def registryHasCollisions: Boolean = {
+    // Check whether we have any name collisions after some sanitizing
+    val namesSet = mutable.Set[String]()
+    val registryNames = Builder.registry.getNames
+    for (name <- asScalaSet(registryNames)) {
+      val sanitizedName = QasinoReporter.sanitizeRegistryName(name)
+      namesSet.add(sanitizedName)
+    }
+    namesSet.size < registryNames.size()
+  }
+
+  private def hasIllegalColumnNames: Boolean = {
+    var hasIllegalColName = false
+    for (name <- Builder.registry.getNames if !hasIllegalColName) {
+      val thisGrouping: Option[String] =
+        Builder.groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
+      val suffix: String = if (thisGrouping.isDefined) {
+        name.drop(thisGrouping.get.length + 1)
+      }
+      else name
+      hasIllegalColName = suffix.matches("^[^A-Za-z].*")
+    }
+    hasIllegalColName
+  }
 }
 
-class QasinoReporterBuilder (
-		var registry: MetricRegistry = new MetricRegistry,
-		var host: String = "localhost",
-		var port: Int = 15597,
-		var secure: Boolean = false,
-		var uri: String = "request",
-		var db_op: String = "add_table_data",
-		var name: String = "QasinoReporter",
-		var db_persist: Boolean = false,
-		var groupings: Set[String] = SortedSet.empty,
-		var filter: MetricFilter = MetricFilter.ALL,
-		var rateUnit: TimeUnit = TimeUnit.SECONDS,
-		var durationUnit: TimeUnit = TimeUnit.MILLISECONDS) {
 
-	private def registryHasCollisions: Boolean = {
-		// Check whether we have any name collisions after some sanitizing
-		val namesSet = mutable.Set[String]()
-		val registryNames = registry.getNames
-		for (name <- asScalaSet(registryNames)) {
-			val sanitizedName = QasinoReporter.sanitizeRegistryName(name)
-			namesSet.add(sanitizedName)
-		}
-		namesSet.size < registryNames.size()
-	}
-
-	private def hasIllegalColumnNames: Boolean = {
-		var hasIllegalColName = false
-		for (name <- registry.getNames if !hasIllegalColName) {
-			val thisGrouping: Option[String] =
-				groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
-			val suffix: String = if (thisGrouping.isDefined) {
-				name.drop(thisGrouping.get.length + 1)
-			}
-			else name
-			hasIllegalColName = suffix.matches("^[^A-Za-z].*")
-		}
-		hasIllegalColName
-	}
-
-	def withRegistry(registry: MetricRegistry): QasinoReporterBuilder = {
-		this.registry = registry
-		this
-	}
-
-	def withPort(port: Int): QasinoReporterBuilder = {
-		this.port = port
-		this
-	}
-
-	def withHost(host: String): QasinoReporterBuilder = {
-		this.host = host
-		this
-	}
-
-	def secure(secure: Boolean = true): QasinoReporterBuilder = {
-		this.secure = secure
-		this
-	}
-
-	def withUri(uri: String): QasinoReporterBuilder = {
-		this.uri = uri
-		this
-	}
-
-	def withOp(db_op: String): QasinoReporterBuilder = {
-		this.db_op = db_op
-		this
-	}
-
-	def withName(name: String): QasinoReporterBuilder = {
-		this.name = name
-		this
-	}
-
-	def withPersist(db_persist: Boolean = true): QasinoReporterBuilder = {
-		this.db_persist = db_persist
-		this
-	}
-
-	def withGroupings(groupings: Set[String]): QasinoReporterBuilder = {
-		this.groupings = groupings
-		this
-	}
-
-	def withFilter(filter: MetricFilter): QasinoReporterBuilder = {
-		this.filter = filter
-		this
-	}
-
-	def build(): QasinoReporter = {
-		registry = QasinoReporter.sanitizeRegistry(registry)
-		if (registryHasCollisions) {
-			throw new IllegalArgumentException(
-				"Found a collision within registry names after sanitation"
-			)
-		}
-		if (hasIllegalColumnNames) {
-			throw new IllegalArgumentException(
-				"Found a column beginning with a non-alpha character"
-			)
-		}
-		new QasinoReporter(this)
-	}
-}
-
-class QasinoReporter(builder: QasinoReporterBuilder) extends
-		ScheduledReporter(builder.registry, builder.name, builder.filter, builder.rateUnit, builder.durationUnit) {
-	val registry: MetricRegistry = builder.registry
-	val host: String = builder.host
-	val port: Int = builder.port
-	val secure: Boolean = builder.secure
-	val uri: String = builder.uri
-	val db_op: String = builder.db_op
-	val db_persist: Boolean = builder.db_persist
-	val name: String = builder.name
-	val groupings: Set[String] = builder.groupings
-	val filter: MetricFilter = builder.filter
-	val rateUnit: TimeUnit = builder.rateUnit
-	val durationUnit: TimeUnit = builder.durationUnit
+class QasinoReporter extends
+		ScheduledReporter(
+      QasinoReporter.Builder.registry,
+      QasinoReporter.Builder.name,
+      QasinoReporter.Builder.filter,
+      QasinoReporter.Builder.rateUnit,
+      QasinoReporter.Builder.durationUnit) {
+	val registry: MetricRegistry = QasinoReporter.Builder.registry
+	val host: String = QasinoReporter.Builder.host
+	val port: Int = QasinoReporter.Builder.port
+	val secure: Boolean = QasinoReporter.Builder.secure
+	val uri: String = QasinoReporter.Builder.uri
+	val db_op: String = QasinoReporter.Builder.db_op
+	val db_persist: Boolean = QasinoReporter.Builder.db_persist
+	val name: String = QasinoReporter.Builder.name
+	val groupings: Set[String] = QasinoReporter.Builder.groupings
+	val filter: MetricFilter = QasinoReporter.Builder.filter
+	val rateUnit: TimeUnit = QasinoReporter.Builder.rateUnit
+	val durationUnit: TimeUnit = QasinoReporter.Builder.durationUnit
 
 	// Set up Dispatch HTTP client
 	private val dispatchHost = if (secure) dispatch.host(host, port).secure else dispatch.host(host, port)
@@ -194,25 +211,66 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	)
 
 	// Shorthand for a two dimensional map of any type
-	type TwoDMap[K1, K2, Val] = Map[K1, Map[K2, Val]]
+	type TwoDMap[K1, K2, Val] = ListMap[K1, ListMap[K2, Val]]
 
-	def getColumnNames(metric: Metric, prefixWithSeparator: String = ""): SortedSet[String] = metric match {
+	def getColumnNames(metric: Metric, prefixWithSeparator: String = ""): Seq[String] = metric match {
 		// Get the qasino column names for any metric type
 		case gauge: Gauge[_] =>
-			SortedSet("value") map {prefixWithSeparator + _}
+			Seq(
+        "value"
+      ) map {prefixWithSeparator + _}
 		case _: Counter =>
-			SortedSet("count") map {prefixWithSeparator + _}
+			Seq(
+        "count"
+      ) map {prefixWithSeparator + _}
 		case _: Histogram =>
-			SortedSet("min", "max", "mean", "median") map {prefixWithSeparator + _}
+			Seq(
+        "count",
+        "max",
+        "mean",
+        "mid",
+        "stddev",
+        "p50",
+        "p75",
+        "p95",
+        "p98",
+        "p99",
+        "p999"
+      ) map {prefixWithSeparator + _}
 		case _: Meter =>
-			SortedSet("one_minute_rate", "five_minute_rate", "fifteen_minute_rate", "mean_rate") map {prefixWithSeparator + _}
+			Seq(
+        "count",
+        "mean_rate",
+        "m1_rate",
+        "m5_rate",
+        "m15_rate",
+        "rate_unit"
+      ) map {prefixWithSeparator + _}
 		case _: Timer =>
-			SortedSet("one_minute_rate", "five_minute_rate", "fifteen_minute_rate", "mean_rate") map {prefixWithSeparator + _}
-		case _ => SortedSet.empty[String]
+			Seq(
+        "count",
+        "max",
+        "mean",
+        "min",
+        "stddev",
+        "p50",
+        "p75",
+        "p95",
+        "p98",
+        "p99",
+        "p999",
+        "mean_rate",
+        "m1_rate",
+        "m5_rate",
+        "m15_rate",
+        "rate_unit",
+        "duration_unit"
+      ) map {prefixWithSeparator + _}
+		case _ => Seq.empty[String]
 	}
 
-	def getGroupedColumnNames(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): SortedSet[String] = {
-		var groupColumnNames = SortedSet.empty[String]
+	def getGroupedColumnNames(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
+		var groupColumnNames = Seq.empty[String]
 		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
 		for ((suffix, metric) <- metricMap) {
 			val thisMetricColumnNames = getColumnNames(metric, suffix + "_")
@@ -223,11 +281,52 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 
 	def getColumnTypes(metric: Metric, prefix: String = ""): Seq[String] = metric match {
 		// Get the qasino column types for any metric type
-		case _: Gauge[_] => Seq("string")
-		case _: Counter => Seq("int")
-		case _: Histogram => Seq("int", "int", "int", "int")
-		case _: Meter => Seq("int", "int", "int", "int")
-		case _: Timer => Seq("int", "int", "int", "int")
+		case _: Gauge[_] => Seq(
+      "string" // value
+    )
+		case _: Counter => Seq(
+      "int" // count
+    )
+		case _: Histogram => Seq(
+      "int", // count
+      "int", // max
+      "int", // mean
+      "int", // min
+      "int", // stddev
+      "int", // p50
+      "int", // p75
+      "int", // p95
+      "int", // p98
+      "int", // p99
+      "int"  // p999
+    )
+		case _: Meter => Seq(
+      "int", // count
+      "int", // mean_rate
+      "int", // m1_rate
+      "int", // m5_rate
+      "int", // m15_rate
+      "string" // rate_unit
+    )
+		case _: Timer => Seq(
+      "int", // count
+      "int", // max
+      "int", // mean
+      "int", // min
+      "int", // stddev
+      "int", // 50p
+      "int", // 75p
+      "int", // 95p
+      "int", // 98p
+      "int", // 99p
+      "int", // 999p
+      "int", // mean_rate
+      "int", // m1_rate
+      "int", // m5_rate
+      "int", // m15_rate
+      "string", // rate_unit
+      "string"  // duration_unit
+    )
 		case _ => Seq.empty[String]
 	}
 
@@ -243,16 +342,51 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 
 	def getColumnValues(metric: Metric) = metric match {
 		// Get the qasino column values for any metric type
-		case gauge: Gauge[_] =>
-			Array(gauge.getValue.toString)
+		case gauge: Gauge[_] => Array(gauge.getValue.toString)
 		case counter: Counter => Array(counter.getCount)
 		case histogram: Histogram =>
 			val snap = histogram.getSnapshot
-			Array(snap.getMin, snap.getMax, snap.getMean, snap.getMedian)
+			Array(
+        histogram.getCount,
+        snap.getMax,
+        snap.getMean,
+        snap.getMin,
+        snap.getStdDev,
+        snap.getMedian,
+        snap.get75thPercentile(),
+        snap.get95thPercentile(),
+        snap.get98thPercentile(),
+        snap.get99thPercentile(),
+        snap.get999thPercentile()
+      )
 		case meter: Meter =>
-			Array(meter.getOneMinuteRate, meter.getFiveMinuteRate, meter.getFifteenMinuteRate, meter.getMeanRate)
+			Array(
+        meter.getCount,
+        rateUnit,
+        meter.getOneMinuteRate,
+        meter.getFiveMinuteRate,
+        meter.getFifteenMinuteRate,
+        meter.getMeanRate
+      )
 		case timer: Timer =>
-			Array(timer.getOneMinuteRate, timer.getFiveMinuteRate, timer.getFifteenMinuteRate, timer.getMeanRate)
+      val snap = timer.getSnapshot
+			Array(
+        timer.getCount,
+        snap.getMax,
+        snap.getMean,
+        snap.getMin,
+        snap.getStdDev,
+        snap.getMedian,
+        snap.get75thPercentile,
+        snap.get95thPercentile,
+        snap.get98thPercentile,
+        snap.get99thPercentile,
+        snap.get999thPercentile,
+        timer.getMeanRate,
+        timer.getOneMinuteRate,
+        timer.getFiveMinuteRate,
+        timer.getFifteenMinuteRate
+      )
 	}
 
 	def getGroupedColumnValues(groupedMetrics: TwoDMap[String, String, Metric], prefix: String):
@@ -269,7 +403,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	def getJsonForMetric(metric: Metric, name: String): String = {
 		// Get the qasino json data for any metric type
 		var postDataMap = defaultDataJson
-		val col_names = setAsJavaSet(getColumnNames(metric))
+		val col_names = seqAsJavaList(getColumnNames(metric))
 		val col_types = seqAsJavaList(getColumnTypes(metric))
 		val r = java.util.Arrays.asList(seqAsJavaList(getColumnValues(metric)))
 		val tableMap = mutable.Map[String, Any](
@@ -285,7 +419,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	def getGroupedJson(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): String = {
 		// Get the qasino json data for any grouped metric type
 		var postDataMap = defaultDataJson
-		val col_names = setAsJavaSet(getGroupedColumnNames(groupedMetrics, prefix))
+		val col_names = seqAsJavaList(getGroupedColumnNames(groupedMetrics, prefix))
 		val col_types =  seqAsJavaList(getGroupedColumnTypes(groupedMetrics, prefix))
 		val r = java.util.Arrays.asList(seqAsJavaList(getGroupedColumnValues(groupedMetrics, prefix)))
 		val tableMap = mutable.Map[String, Any](
@@ -299,7 +433,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 	}
 
 	def groupMetrics(metrics: Map[String, Metric]): TwoDMap[String, String, Metric] = {
-		var groupedMetrics: TwoDMap[String, String, Metric] = Map.empty
+		var groupedMetrics: TwoDMap[String, String, Metric] = ListMap.empty
 		val emptryString = ""
 		for ((name, metric) <- metrics) {
 			// Match groups going by longest group name to shortest
@@ -310,15 +444,14 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 				name.drop(thisGrouping.get.length + 1)
 			}
 			else name
-			var subgroupedMetrics: Map[String, Metric] = groupedMetrics
-				.getOrElse(thisGrouping.getOrElse(emptryString), Map.empty)
+			var subgroupedMetrics: ListMap[String, Metric] = groupedMetrics.getOrElse(thisGrouping.getOrElse(emptryString), ListMap.empty)
 			subgroupedMetrics = subgroupedMetrics + (suffix -> metric)
 			groupedMetrics = groupedMetrics + (thisGrouping.getOrElse(emptryString) -> subgroupedMetrics)
 		}
 		groupedMetrics
 	}
 
-	def getJsonForMetrics(nameToMetric: SortedMap[String, Metric]): Seq[String] = {
+	def getJsonForMetrics(nameToMetric: ListMap[String, Metric]): Seq[String] = {
 		var jsonForMetrics = Seq.empty[String]
 		val groupedMetrics = groupMetrics(mapAsScalaMap(nameToMetric))
 		for ((prefix, metricMap) <- groupedMetrics) {
@@ -336,7 +469,7 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		jsonForMetrics
 	}
 
-	def reportToQasino(nameToMetric: SortedMap[String, Metric]) {
+	def reportToQasino(nameToMetric: ListMap[String, Metric]) {
 		for (jsonStr <- getJsonForMetrics(nameToMetric)) {
 			val postWithParams = dispatchRequest << jsonStr
 			dispatch.Http(postWithParams OK as.String)
@@ -348,12 +481,12 @@ class QasinoReporter(builder: QasinoReporterBuilder) extends
 		 counters: JavaSortedMap[String, Counter] = registry.getCounters,
 		 histograms: JavaSortedMap[String, Histogram] = registry.getHistograms,
 		 meters: JavaSortedMap[String, Meter] = registry.getMeters,
-		 timers: JavaSortedMap[String, Timer] = registry.getTimers): SortedMap[String, Metric] = {
-		SortedMap(gauges.toSeq: _*) ++
-		SortedMap(counters.toSeq: _*) ++
-		SortedMap(histograms.toSeq: _*) ++
-		SortedMap(meters.toSeq: _*) ++
-		SortedMap(timers.toSeq: _*)
+		 timers: JavaSortedMap[String, Timer] = registry.getTimers): ListMap[String, Metric] = {
+		ListMap(gauges.toSeq: _*) ++
+		ListMap(counters.toSeq: _*) ++
+		ListMap(histograms.toSeq: _*) ++
+		ListMap(meters.toSeq: _*) ++
+		ListMap(timers.toSeq: _*)
 	}
 
   override def report (
