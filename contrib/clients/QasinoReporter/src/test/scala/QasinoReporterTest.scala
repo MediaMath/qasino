@@ -16,7 +16,7 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 		QasinoReporter.sanitizeRegistryName("tEsT") should be ("test")
 	}
 
-	"The QasinoReporterBuilder" should "throw an IllegalArgumentException if two metrics are built with names that are the same after sanitation" in {
+	"The builder" should "throw an IllegalArgumentException if two metrics are built with names that are the same after sanitation" in {
 		val counter1 = new Counter
 		val counter1name = "testing_abc"
 		val counter2 = new Counter
@@ -146,5 +146,21 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 				assert(tableDataMap("column_types") === correctColumnTypes)
 			}
 		}
+	}
+
+	try {
+		import java.util.concurrent.TimeUnit
+		class StringGauge(value: String) extends Gauge[String] {
+			def getValue = value
+		}
+
+		val metrics = new MetricRegistry
+		metrics.register("foo.stringGauge", new StringGauge("i'm a little teapot"))
+		val counter = new Counter
+		counter.inc(100)
+		metrics.register("foo.counter", counter)
+		val reporter = QasinoReporter.forRegistry(metrics).withHost("localhost").withPersist().withGroupings(Set("foo")).build()
+		reporter.start(1, TimeUnit.SECONDS)
+		counter.inc(123)
 	}
 }
