@@ -498,4 +498,9 @@ class QasinoReporter extends
 
 		reportToQasino(combineMetricsToMap(gauges, counters, histograms, meters, timers))
 	}
+
+  def shutdown(): Unit = {
+    stop() // Stop the timer
+    report() // Flush out the remaining data
+  }
 }

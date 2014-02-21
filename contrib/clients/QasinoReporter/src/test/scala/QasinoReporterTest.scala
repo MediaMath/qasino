@@ -148,19 +148,28 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 		}
 	}
 
-	try {
-		import java.util.concurrent.TimeUnit
-		class StringGauge(value: String) extends Gauge[String] {
-			def getValue = value
-		}
+  import java.util.concurrent.TimeUnit
+  class StringGauge(value: String) extends Gauge[String] {
+    def getValue = value
+  }
+  class LongGauge(value: Long) extends Gauge[Long] {
+    def getValue = value
+  }
 
-		val metrics = new MetricRegistry
-		metrics.register("foo.stringGauge", new StringGauge("i'm a little teapot"))
-		val counter = new Counter
-		counter.inc(100)
-		metrics.register("foo.counter", counter)
-		val reporter = QasinoReporter.forRegistry(metrics).withHost("localhost").withPersist().withGroupings(Set("foo")).build()
-		reporter.start(1, TimeUnit.SECONDS)
-		counter.inc(123)
-	}
+  val metrics = new MetricRegistry
+  val markTime = System.currentTimeMillis
+  println(s"Timestamp: $markTime")
+  metrics.register("foo.stringGauge", new StringGauge("i'm a little teapot"))
+  metrics.register("foo.longGauge", new LongGauge(markTime))
+  val counter = new Counter
+  counter.inc(100)
+  metrics.register("foo.counter", counter)
+  val reporter = QasinoReporter.forRegistry(metrics).withHost("localhost").withPersist().withGroupings(Set("foo")).build()
+  try {
+    reporter.start(1, TimeUnit.SECONDS)
+    Thread.sleep(1000)
+  }
+  finally {
+    reporter.shutdown()
+  }
 }
