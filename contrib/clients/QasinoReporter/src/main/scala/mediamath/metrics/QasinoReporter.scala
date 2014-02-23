@@ -7,13 +7,16 @@ import Defaults._
 import java.util.concurrent.TimeUnit
 import scala.collection
 import scala.collection.JavaConversions._
-import java.net.{Inet4Address, NetworkInterface, InetAddress}
+import java.net.{Inet4Address, NetworkInterface}
 import collection._
 import java.util.{SortedMap => JavaSortedMap}
 import scala.language.existentials
 import scala.collection.immutable.ListMap
 
 object QasinoReporter {
+
+  val DEFAULT_PORT = 15597
+
 	val registryNameSeparator = "_"
 	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
 
@@ -54,7 +57,7 @@ object QasinoReporter {
   object Builder {
     var registry: MetricRegistry = new MetricRegistry
     var host: String = "localhost"
-    var port: Int = 15597
+    var port: Int = DEFAULT_PORT
     var secure: Boolean = false
     var uri: String = "request"
     var db_op: String = "add_table_data"
@@ -183,7 +186,7 @@ class QasinoReporter extends
 	val rateUnit: TimeUnit = QasinoReporter.Builder.rateUnit
 	val durationUnit: TimeUnit = QasinoReporter.Builder.durationUnit
 
-	// Set up Dispatch HTTP client
+  // Set up Dispatch HTTP client
 	private val dispatchHost = if (secure) dispatch.host(host, port).secure else dispatch.host(host, port)
 	private val dispatchRequest = (dispatchHost / uri).POST <<? Map("op" -> db_op)
 
