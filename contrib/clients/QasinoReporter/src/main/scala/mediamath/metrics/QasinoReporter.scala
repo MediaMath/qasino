@@ -17,6 +17,18 @@ object QasinoReporter {
 
   val DEFAULT_PORT = 15597
 
+  val defaultColumnsTypes = Seq[String](
+    "string" // host
+  )
+
+  val defaultColumnsNames = Seq[String](
+    "host" // host
+  )
+
+  val defaultColumnsValues = Array[Any](
+    getFirstNonLoopbackAddress // host
+  )
+
 	val registryNameSeparator = "_"
 	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
 
@@ -262,7 +274,7 @@ class QasinoReporter extends
 	}
 
 	def getGroupedColumnNames(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
-		var groupColumnNames = Seq.empty[String]
+		var groupColumnNames = defaultColumnsNames
 		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
 		for ((suffix, metric) <- metricMap) {
 			val thisMetricColumnNames = getColumnNames(metric, suffix + "_")
@@ -274,10 +286,10 @@ class QasinoReporter extends
 	def getColumnTypes(metric: Metric, prefix: String = ""): Seq[String] = metric match {
 		// Get the qasino column types for any metric type
 		case _: Gauge[_] => Seq(
-      "string" // value
+      "string"  // value
     )
 		case _: Counter => Seq(
-      "int" // count
+      "int"  // count
     )
 		case _: Histogram => Seq(
       "int", // count
@@ -323,7 +335,7 @@ class QasinoReporter extends
 	}
 
 	def getGroupedColumnTypes(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
-		var groupColumnTypes = Seq.empty[String]
+		var groupColumnTypes = defaultColumnsTypes
 		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
 		for ((_, metric) <- metricMap) {
 			val thisMetricColumnTypes = getColumnTypes(metric)
@@ -334,56 +346,60 @@ class QasinoReporter extends
 
 	def getColumnValues(metric: Metric) = metric match {
 		// Get the qasino column values for any metric type
-		case gauge: Gauge[_] => Array(gauge.getValue.toString)
-		case counter: Counter => Array(counter.getCount)
+		case gauge: Gauge[_] => Array(
+      gauge.getValue.toString
+    )
+		case counter: Counter => Array(
+      counter.getCount
+    )
 		case histogram: Histogram =>
 			val snap = histogram.getSnapshot
 			Array(
         histogram.getCount,
-        snap.getMax,
-        snap.getMean,
-        snap.getMin,
-        snap.getStdDev,
-        snap.getMedian,
-        snap.get75thPercentile(),
-        snap.get95thPercentile(),
-        snap.get98thPercentile(),
-        snap.get99thPercentile(),
-        snap.get999thPercentile()
+        convertDuration(snap.getMax),
+        convertDuration(snap.getMean),
+        convertDuration(snap.getMin),
+        convertDuration(snap.getStdDev),
+        convertDuration(snap.getMedian),
+        convertDuration(snap.get75thPercentile),
+        convertDuration(snap.get95thPercentile),
+        convertDuration(snap.get98thPercentile),
+        convertDuration(snap.get99thPercentile),
+        convertDuration(snap.get999thPercentile)
       )
 		case meter: Meter =>
 			Array(
         meter.getCount,
         rateUnit,
-        meter.getOneMinuteRate,
-        meter.getFiveMinuteRate,
-        meter.getFifteenMinuteRate,
-        meter.getMeanRate
+        convertRate(meter.getOneMinuteRate),
+        convertRate(meter.getFiveMinuteRate),
+        convertRate(meter.getFifteenMinuteRate),
+        convertRate(meter.getMeanRate)
       )
 		case timer: Timer =>
       val snap = timer.getSnapshot
 			Array(
-        timer.getCount,
-        snap.getMax,
-        snap.getMean,
-        snap.getMin,
-        snap.getStdDev,
-        snap.getMedian,
-        snap.get75thPercentile,
-        snap.get95thPercentile,
-        snap.get98thPercentile,
-        snap.get99thPercentile,
-        snap.get999thPercentile,
-        timer.getMeanRate,
-        timer.getOneMinuteRate,
-        timer.getFiveMinuteRate,
-        timer.getFifteenMinuteRate
+        convertDuration(timer.getCount),
+        convertDuration(snap.getMax),
+        convertDuration(snap.getMean),
+        convertDuration(snap.getMin),
+        convertDuration(snap.getStdDev),
+        convertDuration(snap.getMedian),
+        convertDuration(snap.get75thPercentile),
+        convertDuration(snap.get95thPercentile),
+        convertDuration(snap.get98thPercentile),
+        convertDuration(snap.get99thPercentile),
+        convertDuration(snap.get999thPercentile),
+        convertRate(timer.getMeanRate),
+        convertRate(timer.getOneMinuteRate),
+        convertRate(timer.getFiveMinuteRate),
+        convertRate(timer.getFifteenMinuteRate)
       )
 	}
 
 	def getGroupedColumnValues(groupedMetrics: TwoDMap[String, String, Metric], prefix: String):
 	Array[Any] = {
-		var groupColumnValues = Array.empty[Any]
+		var groupColumnValues = defaultColumnsValues
 		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
 		for ((_, metric) <- metricMap) {
 			val thisMetricColumnValues = getColumnValues(metric)

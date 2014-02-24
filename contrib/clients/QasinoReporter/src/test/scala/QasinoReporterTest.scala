@@ -86,6 +86,7 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 				assert(groupPrefix === tableDataMap("tablename"))
 			}
 			val correctColumnNames = List(
+        "host",
         "gauge_value",
         "abc_count",
         "def_count",
@@ -117,6 +118,7 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 				assert(tableDataMap("column_names") === correctColumnNames)
 			}
 			val correctColumnTypes = List(
+        "string", // host
         "string", // gauge_value
         "int", // abc_count
         "int", // def_count
