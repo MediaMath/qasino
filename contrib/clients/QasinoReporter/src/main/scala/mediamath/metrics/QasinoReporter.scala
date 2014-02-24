@@ -12,6 +12,7 @@ import collection._
 import java.util.{SortedMap => JavaSortedMap}
 import scala.language.existentials
 import scala.collection.immutable.ListMap
+import org.slf4j.LoggerFactory
 
 object QasinoReporter {
 
@@ -370,11 +371,11 @@ class QasinoReporter extends
 		case meter: Meter =>
 			Array(
         meter.getCount,
-        rateUnit,
+        convertRate(meter.getMeanRate),
         convertRate(meter.getOneMinuteRate),
         convertRate(meter.getFiveMinuteRate),
         convertRate(meter.getFifteenMinuteRate),
-        convertRate(meter.getMeanRate)
+        rateUnit
       )
 		case timer: Timer =>
       val snap = timer.getSnapshot
@@ -393,7 +394,9 @@ class QasinoReporter extends
         convertRate(timer.getMeanRate),
         convertRate(timer.getOneMinuteRate),
         convertRate(timer.getFiveMinuteRate),
-        convertRate(timer.getFifteenMinuteRate)
+        convertRate(timer.getFifteenMinuteRate),
+        rateUnit,
+        durationUnit
       )
 	}
 
