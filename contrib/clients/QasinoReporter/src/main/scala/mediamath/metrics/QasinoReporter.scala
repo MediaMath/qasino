@@ -55,18 +55,18 @@ object QasinoReporter {
   }
 
   object Builder {
-    var registry: MetricRegistry = new MetricRegistry
-    var host: String = "localhost"
-    var port: Int = DEFAULT_PORT
-    var secure: Boolean = false
-    var uri: String = "request"
-    var db_op: String = "add_table_data"
-    var name: String = "QasinoReporter"
-    var db_persist: Boolean = false
-    var groupings: Set[String] = SortedSet.empty
-    var filter: MetricFilter = MetricFilter.ALL
-    var rateUnit: TimeUnit = TimeUnit.SECONDS
-    var durationUnit: TimeUnit = TimeUnit.MILLISECONDS
+    private[metrics] var registry: MetricRegistry = new MetricRegistry
+    private[metrics] var host: String = "localhost"
+    private[metrics] var port: Int = DEFAULT_PORT
+    private[metrics] var secure: Boolean = false
+    private[metrics] var uri: String = "request"
+    private[metrics] var db_op: String = "add_table_data"
+    private[metrics] var name: String = "QasinoReporter"
+    private[metrics] var db_persist: Boolean = false
+    private[metrics] var groupings: Set[String] = SortedSet.empty
+    private[metrics] var filter: MetricFilter = MetricFilter.ALL
+    private[metrics] var rateUnit: TimeUnit = TimeUnit.SECONDS
+    private[metrics] var durationUnit: TimeUnit = TimeUnit.MILLISECONDS
 
     def withPort(port: Int): this.type = {
       Builder.port = port
@@ -78,7 +78,7 @@ object QasinoReporter {
       this
     }
 
-    def secure(secure: Boolean = true): this.type = {
+    def withSecure(secure: Boolean = true): this.type = {
       Builder.secure = secure
       this
     }
@@ -124,35 +124,24 @@ object QasinoReporter {
     }
 
     def build(): QasinoReporter = {
-      Builder.registry = QasinoReporter.sanitizeRegistry(Builder.registry)
-      if (registryHasCollisions) {
-        throw new IllegalArgumentException(
-          "Found a collision within registry names after sanitation"
-        )
-      }
-      if (hasIllegalColumnNames) {
-        throw new IllegalArgumentException(
-          "Found a column beginning with a non-alpha character"
-        )
-      }
       new QasinoReporter
     }
   }
 
-  private def registryHasCollisions: Boolean = {
+  private def registryHasCollisions(registry: MetricRegistry): Boolean = {
     // Check whether we have any name collisions after some sanitizing
     val namesSet = mutable.Set[String]()
-    val registryNames = Builder.registry.getNames
+    val registryNames = registry.getNames
     for (name <- asScalaSet(registryNames)) {
-      val sanitizedName = QasinoReporter.sanitizeString(name)
+      val sanitizedName = sanitizeString(name)
       namesSet.add(sanitizedName)
     }
     namesSet.size < registryNames.size()
   }
 
-  private def hasIllegalColumnNames: Boolean = {
+  private def hasIllegalColumnNames(registry: MetricRegistry): Boolean = {
     var hasIllegalColName = false
-    for (name <- Builder.registry.getNames if !hasIllegalColName) {
+    for (name <- registry.getNames if !hasIllegalColName) {
       val thisGrouping: Option[String] =
         Builder.groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
       val suffix: String = if (thisGrouping.isDefined) {
@@ -164,27 +153,27 @@ object QasinoReporter {
     hasIllegalColName
   }
 }
-
+import QasinoReporter._
 
 class QasinoReporter extends
 		ScheduledReporter(
-      QasinoReporter.Builder.registry,
-      QasinoReporter.Builder.name,
-      QasinoReporter.Builder.filter,
-      QasinoReporter.Builder.rateUnit,
-      QasinoReporter.Builder.durationUnit) {
-	val registry: MetricRegistry = QasinoReporter.Builder.registry
-	val host: String = QasinoReporter.Builder.host
-	val port: Int = QasinoReporter.Builder.port
-	val secure: Boolean = QasinoReporter.Builder.secure
-	val uri: String = QasinoReporter.Builder.uri
-	val db_op: String = QasinoReporter.Builder.db_op
-	val db_persist: Boolean = QasinoReporter.Builder.db_persist
-	val name: String = QasinoReporter.Builder.name
-	val groupings: Set[String] = QasinoReporter.Builder.groupings
-	val filter: MetricFilter = QasinoReporter.Builder.filter
-	val rateUnit: TimeUnit = QasinoReporter.Builder.rateUnit
-	val durationUnit: TimeUnit = QasinoReporter.Builder.durationUnit
+      Builder.registry,
+      Builder.name,
+      Builder.filter,
+      Builder.rateUnit,
+      Builder.durationUnit) {
+	val registry: MetricRegistry = Builder.registry
+	val host: String = Builder.host
+	val port: Int = Builder.port
+	val secure: Boolean = Builder.secure
+	val uri: String = Builder.uri
+	val db_op: String = Builder.db_op
+	val db_persist: Boolean = Builder.db_persist
+	val name: String = Builder.name
+	val groupings: Set[String] = Builder.groupings
+	val filter: MetricFilter = Builder.filter
+	val rateUnit: TimeUnit = Builder.rateUnit
+	val durationUnit: TimeUnit = Builder.durationUnit
 
   // Set up Dispatch HTTP client
 	private val dispatchHost = if (secure) dispatch.host(host, port).secure else dispatch.host(host, port)
@@ -204,7 +193,7 @@ class QasinoReporter extends
 	private[this] val db_persist_int = if (db_persist) 1 else 0
 	private val defaultDataJson = mutable.Map[String, Any](
 		op.toString -> db_op,
-		identity.toString -> QasinoReporter.getFirstNonLoopbackAddress,
+		identity.toString -> getFirstNonLoopbackAddress,
 		persist.toString -> db_persist_int,
 		table.toString -> mutable.Map[String, Any](
 			tablename.toString -> Unit,
@@ -212,10 +201,6 @@ class QasinoReporter extends
 			column_types.toString -> Unit
 		)
 	)
-
-  def register[T <: Metric](name: String, metric: T): Unit = {
-    registry.register(QasinoReporter.sanitizeString(name), metric)
-  }
 
 	// Shorthand for a two dimensional map of any type
 	type TwoDMap[K1, K2, Val] = ListMap[K1, ListMap[K2, Val]]
@@ -503,7 +488,32 @@ class QasinoReporter extends
 			meters: JavaSortedMap[String, Meter],
 			timers: JavaSortedMap[String, Timer]) {
 
-		reportToQasino(combineMetricsToMap(gauges, counters, histograms, meters, timers))
+    val sanitizedRegistry = sanitizeRegistry(registry)
+    try {
+      if (registryHasCollisions(registry)) {
+        throw new IllegalArgumentException(
+          "Found a collision within registry names after sanitation"
+        )
+      }
+      if (hasIllegalColumnNames(registry)) {
+        throw new IllegalArgumentException(
+          "Found a column beginning with a non-alpha character"
+        )
+      }
+    }
+    catch {
+      case ex: Throwable =>
+        stop()
+        throw ex
+    }
+		//reportToQasino(combineMetricsToMap(gauges, counters, histograms, meters, timers))
+    reportToQasino(combineMetricsToMap(
+      sanitizedRegistry.getGauges,
+      sanitizedRegistry.getCounters,
+      sanitizedRegistry.getHistograms,
+      sanitizedRegistry.getMeters,
+      sanitizedRegistry.getTimers
+    ))
 	}
 
   def shutdown(): Unit = {

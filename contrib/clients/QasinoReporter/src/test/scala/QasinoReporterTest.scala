@@ -24,8 +24,9 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 		val metrics = new MetricRegistry
 		metrics.register(MetricRegistry.name(counter1name), counter1)
 		metrics.register(MetricRegistry.name(counter2name), counter2)
+    val reporter = QasinoReporter.forRegistry(metrics).build()
 		intercept[IllegalArgumentException] {
-			QasinoReporter.forRegistry(metrics).build()
+      reporter.report()
 		}
 	}
 
@@ -34,8 +35,9 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 		val counter1name = "testing_123"
 		val metrics = new MetricRegistry
 		metrics.register(MetricRegistry.name(counter1name), counter1)
+    val reporter = QasinoReporter.forRegistry(metrics).withGroupings(Set("testing")).build()
 		intercept[IllegalArgumentException] {
-			QasinoReporter.forRegistry(metrics).withGroupings(Set("testing")).build()
+      reporter.report()
 		}
 	}
 
@@ -167,11 +169,15 @@ class QasinoReporterTest extends FlatSpec with Matchers {
   val counter2 = new Counter
   counter2.inc(200)
   metrics.register("foo.counters.counter2", counter2)
+  val counterShouldBeDeleted = new Counter
+  counterShouldBeDeleted.inc(100)
+  metrics.register("foo.counters.counterShouldBeDeleted", counter1)
   val reporter = QasinoReporter.forRegistry(metrics).withHost("localhost").withPersist().withGroupings(Set("foo", "foo.counters")).build()
   // Add another counter after registering the metrics
   val counter3 = new Counter
   counter3.inc(300)
-  reporter.register("foo.counters.counter3", counter3)
+  metrics.register("foo.counters.counter3", counter3)
+  metrics.remove("foo.counters.counterShouldBeDeleted")
   try {
     reporter.start(1, TimeUnit.SECONDS)
     Thread.sleep(1000)
