@@ -176,8 +176,6 @@ class QasinoReporter extends
 	val rateUnit: TimeUnit = Builder.rateUnit
 	val durationUnit: TimeUnit = Builder.durationUnit
 
-  private val log = LoggerFactory.getLogger(getClass)
-
   // Set up Dispatch HTTP client
 	private val dispatchHost = if (secure) dispatch.host(host, port).secure else dispatch.host(host, port)
 	private val dispatchRequest = (dispatchHost / uri).POST <<? Map("op" -> db_op)
@@ -468,7 +466,6 @@ class QasinoReporter extends
 
 	def reportToQasino(nameToMetric: ListMap[String, Metric]) {
 		for (jsonStr <- getJsonForMetrics(nameToMetric)) {
-      log.info(jsonStr)
 			val postWithParams = dispatchRequest << jsonStr
 			dispatch.Http(postWithParams OK as.String)
 		}
