@@ -20,7 +20,7 @@ object QasinoReporter {
 	val registryNameSeparator = "_"
 	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
 
-	def sanitizeRegistryName(name: String): String = {
+	def sanitizeString(name: String): String = {
 		// Remove any instances of the illegal characters from the name
 		illegalCharRegex.replaceAllIn(name.toLowerCase, registryNameSeparator)
 	}
@@ -30,7 +30,7 @@ object QasinoReporter {
 		val sanitizedRegistry = new MetricRegistry
 		val metricMap = mapAsScalaMap(registry.getMetrics)
 		for ((name, metric) <- metricMap) {
-			sanitizedRegistry.register(sanitizeRegistryName(name), metric)
+			sanitizedRegistry.register(sanitizeString(name), metric)
 		}
 		sanitizedRegistry
 	}
@@ -104,7 +104,7 @@ object QasinoReporter {
     }
 
     def withGroupings(groupings: Set[String]): this.type = {
-      Builder.groupings = groupings
+      Builder.groupings = groupings.map {sanitizeString}
       this
     }
 
@@ -144,7 +144,7 @@ object QasinoReporter {
     val namesSet = mutable.Set[String]()
     val registryNames = Builder.registry.getNames
     for (name <- asScalaSet(registryNames)) {
-      val sanitizedName = QasinoReporter.sanitizeRegistryName(name)
+      val sanitizedName = QasinoReporter.sanitizeString(name)
       namesSet.add(sanitizedName)
     }
     namesSet.size < registryNames.size()
@@ -212,6 +212,10 @@ class QasinoReporter extends
 			column_types.toString -> Unit
 		)
 	)
+
+  def register[T <: Metric](name: String, metric: T): Unit = {
+    registry.register(QasinoReporter.sanitizeString(name), metric)
+  }
 
 	// Shorthand for a two dimensional map of any type
 	type TwoDMap[K1, K2, Val] = ListMap[K1, ListMap[K2, Val]]

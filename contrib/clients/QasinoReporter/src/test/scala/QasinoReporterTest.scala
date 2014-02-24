@@ -10,10 +10,10 @@ class QasinoReporterTest extends FlatSpec with Matchers {
 	// name sanitization checks
 	val sep = QasinoReporter.registryNameSeparator
 	"A sanitized registry name" should "replace non-alphanumeric characters with underscores" in {
-		QasinoReporter.sanitizeRegistryName("testing.abc") should be ("testing" + sep + "abc")
+		QasinoReporter.sanitizeString("testing.abc") should be ("testing" + sep + "abc")
 	}
 	it should "change all uppercase characters to lowercase" in {
-		QasinoReporter.sanitizeRegistryName("tEsT") should be ("test")
+		QasinoReporter.sanitizeString("tEsT") should be ("test")
 	}
 
 	"The builder" should "throw an IllegalArgumentException if two metrics are built with names that are the same after sanitation" in {
@@ -161,10 +161,17 @@ class QasinoReporterTest extends FlatSpec with Matchers {
   println(s"Timestamp: $markTime")
   metrics.register("foo.stringGauge", new StringGauge("i'm a little teapot"))
   metrics.register("foo.longGauge", new LongGauge(markTime))
-  val counter = new Counter
-  counter.inc(100)
-  metrics.register("foo.counter", counter)
-  val reporter = QasinoReporter.forRegistry(metrics).withHost("localhost").withPersist().withGroupings(Set("foo")).build()
+  val counter1 = new Counter
+  counter1.inc(100)
+  metrics.register("foo.counters.counter1", counter1)
+  val counter2 = new Counter
+  counter2.inc(200)
+  metrics.register("foo.counters.counter2", counter2)
+  val reporter = QasinoReporter.forRegistry(metrics).withHost("localhost").withPersist().withGroupings(Set("foo", "foo.counters")).build()
+  // Add another counter after registering the metrics
+  val counter3 = new Counter
+  counter3.inc(300)
+  reporter.register("foo.counters.counter3", counter3)
   try {
     reporter.start(1, TimeUnit.SECONDS)
     Thread.sleep(1000)
