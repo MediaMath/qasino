@@ -73,6 +73,8 @@ object QasinoReporter {
     private[metrics] var host: String = "localhost"
     private[metrics] var port: Int = DEFAULT_PORT
     private[metrics] var secure: Boolean = false
+    private[metrics] var username: String = ""
+    private[metrics] var password: String = ""
     private[metrics] var uri: String = "request"
     private[metrics] var db_op: String = "add_table_data"
     private[metrics] var name: String = "QasinoReporter"
@@ -94,6 +96,16 @@ object QasinoReporter {
 
     def withSecure(secure: Boolean = true): this.type = {
       Builder.secure = secure
+      this
+    }
+
+    def withUsername(username: String): this.type = {
+      Builder.username = username
+      this
+    }
+
+    def withPassword(password: String): this.type = {
+      Builder.password = password
       this
     }
 
@@ -180,6 +192,8 @@ class QasinoReporter extends
 	val host: String = Builder.host
 	val port: Int = Builder.port
 	val secure: Boolean = Builder.secure
+  val username: String = Builder.username
+  val password: String = Builder.password
 	val uri: String = Builder.uri
 	val db_op: String = Builder.db_op
 	val db_persist: Boolean = Builder.db_persist
@@ -193,8 +207,14 @@ class QasinoReporter extends
   val log = LoggerFactory.getLogger(this.getClass)
 
   // Set up Dispatch HTTP client
-	private val dispatchHost = if (secure) dispatch.host(host, port).secure else dispatch.host(host, port)
-	private val dispatchRequest = (dispatchHost / uri).POST <<? Map("op" -> db_op)
+	private val dispatchHost = if (secure)
+    dispatch.host(host, port).secure
+  else
+    dispatch.host(host, port)
+	private val dispatchRequest = if (secure)
+    (dispatchHost / uri).POST <<? Map("op" -> db_op) as_!(username, password)
+  else
+    (dispatchHost / uri).POST <<? Map("op" -> db_op)
 
 	// JSON mapper singleton
 	private val mapper = new ObjectMapper()
