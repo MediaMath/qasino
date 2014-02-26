@@ -50,7 +50,6 @@ object QasinoReporter {
 
 	def getFirstNonLoopbackAddress: String = {
 		val interfaces = NetworkInterface.getNetworkInterfaces
-		//for (interface <- interfaces) {
 		val nonLoopbackInterfaces = interfaces.filter(!_.isLoopback)
 		val default = "unavailable"
 		var address = default
@@ -187,6 +186,9 @@ class QasinoReporter extends
 	val filter: MetricFilter = Builder.filter
 	val rateUnit: TimeUnit = Builder.rateUnit
 	val durationUnit: TimeUnit = Builder.durationUnit
+
+  // Set up logger
+  val log = LoggerFactory.getLogger(this.getClass)
 
   // Set up Dispatch HTTP client
 	private val dispatchHost = if (secure) dispatch.host(host, port).secure else dispatch.host(host, port)
@@ -480,11 +482,22 @@ class QasinoReporter extends
 		jsonForMetrics
 	}
 
-	def reportToQasino(nameToMetric: ListMap[String, Metric]) {
-		for (jsonStr <- getJsonForMetrics(nameToMetric)) {
-			val postWithParams = dispatchRequest << jsonStr
-			dispatch.Http(postWithParams OK as.String)
-		}
+	def reportToQasino(nameToMetric: ListMap[String, Metric]): Option[Throwable] = {
+    var futures: List[Future[String]] = List.empty[Future[String]]
+    try {
+      for (jsonStr <- getJsonForMetrics(nameToMetric)) {
+        val postWithParams = dispatchRequest << jsonStr
+        val f = dispatch.Http(postWithParams OK as.String)
+        futures = f +: futures
+      }
+
+      futures.foreach(_()) // Block until all futures are resolved})
+    }
+    catch {
+      case ex: Throwable =>
+       return Some(ex)
+    }
+    None
 	}
 
 	def combineMetricsToMap(
@@ -525,14 +538,18 @@ class QasinoReporter extends
         stop()
         throw ex
     }
-		//reportToQasino(combineMetricsToMap(gauges, counters, histograms, meters, timers))
-    reportToQasino(combineMetricsToMap(
+
+    val ex: Option[Throwable] = reportToQasino(combineMetricsToMap(
       sanitizedRegistry.getGauges,
       sanitizedRegistry.getCounters,
       sanitizedRegistry.getHistograms,
       sanitizedRegistry.getMeters,
       sanitizedRegistry.getTimers
     ))
+
+    if (ex.isInstanceOf[Some[Throwable]]) {
+      log.error("Failed to report data", ex.get)
+    }
 	}
 
   def shutdown(): Unit = {
