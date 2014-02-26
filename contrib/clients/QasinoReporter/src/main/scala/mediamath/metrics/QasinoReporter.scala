@@ -19,6 +19,7 @@ import scala.concurrent.duration._
 object QasinoReporter {
 
   val DEFAULT_PORT = 15597
+  val DEFAULT_SECURE_PORT = 443
 
   val defaultColumnsTypes = Seq[String](
     "string" // host
@@ -150,6 +151,7 @@ object QasinoReporter {
     }
 
     def build(): QasinoReporter = {
+      if (secure && port == DEFAULT_PORT) port = DEFAULT_SECURE_PORT
       new QasinoReporter
     }
   }
