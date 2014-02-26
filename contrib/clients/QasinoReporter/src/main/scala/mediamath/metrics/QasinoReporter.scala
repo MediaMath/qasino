@@ -13,6 +13,8 @@ import java.util.{SortedMap => JavaSortedMap}
 import scala.language.existentials
 import scala.collection.immutable.ListMap
 import org.slf4j.LoggerFactory
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 object QasinoReporter {
 
@@ -491,7 +493,7 @@ class QasinoReporter extends
         futures = f +: futures
       }
 
-      futures.foreach(_()) // Block until all futures are resolved})
+      Await.result(Future.sequence(futures), scala.concurrent.duration.Duration.Inf) // Block until all futures are resolved})
     }
     catch {
       case ex: Throwable =>
