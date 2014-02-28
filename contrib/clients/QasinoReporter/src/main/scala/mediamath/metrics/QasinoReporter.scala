@@ -64,13 +64,12 @@ object QasinoReporter {
 		address
 	}
 
-  def forRegistry(registry: MetricRegistry): Builder.type = {
-    Builder.registry = registry
-    Builder
+  def forRegistry(registry: MetricRegistry): Builder = {
+    new Builder(registry)
   }
 
-  object Builder {
-    private[metrics] var registry: MetricRegistry = new MetricRegistry
+  class Builder(reg: MetricRegistry) {
+    private[metrics] var registry: MetricRegistry = reg
     private[metrics] var host: String = "localhost"
     private[metrics] var port: Int = DEFAULT_PORT
     private[metrics] var secure: Boolean = false
@@ -86,73 +85,73 @@ object QasinoReporter {
     private[metrics] var durationUnit: TimeUnit = TimeUnit.MILLISECONDS
 
     def withPort(port: Int): this.type = {
-      Builder.port = port
+      this.port = port
       this
     }
 
     def withHost(host: String): this.type = {
-      Builder.host = host
+      this.host = host
       this
     }
 
     def withSecure(secure: Boolean = true): this.type = {
-      Builder.secure = secure
+      this.secure = secure
       this
     }
 
     def withUsername(username: String): this.type = {
-      Builder.username = username
+      this.username = username
       this
     }
 
     def withPassword(password: String): this.type = {
-      Builder.password = password
+      this.password = password
       this
     }
 
     def withUri(uri: String): this.type = {
-      Builder.uri = uri
+      this.uri = uri
       this
     }
 
     def withOp(db_op: String): this.type = {
-      Builder.db_op = db_op
+      this.db_op = db_op
       this
     }
 
     def withName(name: String): this.type = {
-      Builder.name = name
+      this.name = name
       this
     }
 
     def withPersist(db_persist: Boolean = true): this.type = {
-      Builder.db_persist = db_persist
+      this.db_persist = db_persist
       this
     }
 
     def withGroupings(groupings: Set[String]): this.type = {
-      Builder.groupings = groupings.map {sanitizeString}
+      this.groupings = groupings.map {sanitizeString}
       this
     }
 
     def withFilter(filter: MetricFilter): this.type = {
-      Builder.filter = filter
+      this.filter = filter
       this
     }
 
     def convertRatesTo(rateUnit: TimeUnit): this.type = {
-      Builder.rateUnit = rateUnit
+      this.rateUnit = rateUnit
       this
     }
 
     def convertDurationsTo(durationUnit: TimeUnit): this.type = {
-      Builder.durationUnit = durationUnit
+      this.durationUnit = durationUnit
       this
     }
 
     def build(): QasinoReporter = {
       if (secure && port == DEFAULT_PORT) port = DEFAULT_SECURE_PORT
-      new QasinoReporter
+      new QasinoReporter(this)
     }
   }
 
@@ -166,44 +165,30 @@ object QasinoReporter {
     }
     namesSet.size < registryNames.size()
   }
-
-  private def hasIllegalColumnNames(registry: MetricRegistry): Boolean = {
-    var hasIllegalColName = false
-    for (name <- registry.getNames if !hasIllegalColName) {
-      val thisGrouping: Option[String] =
-        Builder.groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
-      val suffix: String = if (thisGrouping.isDefined) {
-        name.drop(thisGrouping.get.length + 1)
-      }
-      else name
-      hasIllegalColName = suffix.matches("^[^A-Za-z].*")
-    }
-    hasIllegalColName
-  }
 }
 import QasinoReporter._
 
-class QasinoReporter extends
+class QasinoReporter(builder: Builder) extends
 		ScheduledReporter(
-      Builder.registry,
-      Builder.name,
-      Builder.filter,
-      Builder.rateUnit,
-      Builder.durationUnit) {
-	val registry: MetricRegistry = Builder.registry
-	val host: String = Builder.host
-	val port: Int = Builder.port
-	val secure: Boolean = Builder.secure
-  val username: String = Builder.username
-  val password: String = Builder.password
-	val uri: String = Builder.uri
-	val db_op: String = Builder.db_op
-	val db_persist: Boolean = Builder.db_persist
-	val name: String = Builder.name
-	val groupings: Set[String] = Builder.groupings
-	val filter: MetricFilter = Builder.filter
-	val rateUnit: TimeUnit = Builder.rateUnit
-	val durationUnit: TimeUnit = Builder.durationUnit
+      builder.registry,
+      builder.name,
+      builder.filter,
+      builder.rateUnit,
+      builder.durationUnit) {
+	val registry: MetricRegistry = builder.registry
+	val host: String = builder.host
+	val port: Int = builder.port
+	val secure: Boolean = builder.secure
+  val username: String = builder.username
+  val password: String = builder.password
+	val uri: String = builder.uri
+	val db_op: String = builder.db_op
+	val db_persist: Boolean = builder.db_persist
+	val name: String = builder.name
+	val groupings: Set[String] = builder.groupings
+	val filter: MetricFilter = builder.filter
+	val rateUnit: TimeUnit = builder.rateUnit
+	val durationUnit: TimeUnit = builder.durationUnit
 
   // Set up logger
   val log = LoggerFactory.getLogger(this.getClass)
@@ -240,6 +225,21 @@ class QasinoReporter extends
 			column_types.toString -> Unit
 		)
 	)
+
+  // Check whether illegal column names would be generated by the current registry
+  private def hasIllegalColumnNames(registry: MetricRegistry): Boolean = {
+    var hasIllegalColName = false
+    for (name <- registry.getNames if !hasIllegalColName) {
+      val thisGrouping: Option[String] =
+        groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
+      val suffix: String = if (thisGrouping.isDefined) {
+        name.drop(thisGrouping.get.length + 1)
+      }
+      else name
+      hasIllegalColName = suffix.matches("^[^A-Za-z].*")
+    }
+    hasIllegalColName
+  }
 
 	// Shorthand for a two dimensional map of any type
 	type TwoDMap[K1, K2, Val] = ListMap[K1, ListMap[K2, Val]]
