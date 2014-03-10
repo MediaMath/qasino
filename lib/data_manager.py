@@ -24,6 +24,7 @@ class DataManager(object):
         self.query_id = 0
         self.views = {}
         self.thread_id = thread.get_ident()
+        self.stats = {}
 
         self.generation_duration_s = generation_duration_s
         self.signal_channel = signal_channel
@@ -143,7 +144,7 @@ class DataManager(object):
 
             return self.process_non_select(txn, sql, query_id, sql_backend)
 
-        # Proecess a select statement.
+        # Process a select statement.
 
         return sql_backend.do_select(txn, sql)
 
@@ -241,11 +242,16 @@ class DataManager(object):
     # "tables" table is called last (after all the other internal
     # tables are added).
 
-    def insert_internal_tables(self, txn, sql_backend_writer, db_generation_number, time, generation_duration_s, views):
+    def insert_internal_tables(self, txn, sql_backend_writer, sql_backend_reader, db_generation_number, time, generation_duration_s, views):
 
         sql_backend_writer.insert_info_table(txn, db_generation_number, time, generation_duration_s)
 
         sql_backend_writer.insert_connections_table(txn)
+
+        if sql_backend_reader != None:
+            sql_backend_writer.insert_sql_stats_table(txn, sql_backend_reader)
+
+        sql_backend_writer.insert_update_stats_table(txn)
 
         # this should be second last so views can be created of any tables above.
         # this means though that you can not create views of any tables below.
@@ -279,6 +285,7 @@ class DataManager(object):
 
         self.insert_internal_tables(txn, 
                                     self.sql_backend_writer, 
+                                    self.sql_backend_reader,
                                     self.db_generation_number, 
                                     time.time(), 
                                     self.generation_duration_s, 
