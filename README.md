@@ -90,7 +90,9 @@ interval that matches the generation interval.
 
 ##Querying (SQL)
 
-Qasino can be queried with SQL using three different methods:
+Qasino has a SQL interface.  Since Qasino uses SQLite on the backend
+you can refer the [SQLite SQL documentation](http://www.sqlite.org/lang.html) 
+for SQL syntax details.  Qasino can be queried with SQL using three different methods:
 
 ###Line receiver
 
