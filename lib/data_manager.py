@@ -181,6 +181,12 @@ class DataManager(object):
         if m != None:
             return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_tables ORDER BY tablename;")
 
+        # SHOW tables with LIKE?
+
+        m = re.search(r"^\s*show\s+tables\s+like\s+('\S+')\s*;$", sql, flags=re.IGNORECASE)
+        if m != None:
+            return sql_backend.do_select(txn, "SELECT *, strftime('%Y-%m-%d %H:%M:%f UTC', last_update_epoch, 'unixepoch') last_update_datetime FROM qasino_server_tables WHERE tablename LIKE {} ORDER BY tablename;".format(m.group(1)) )
+
         # SHOW connections?
 
         m = re.search(r"^\s*show\s+connections\s*;$", sql, flags=re.IGNORECASE)
