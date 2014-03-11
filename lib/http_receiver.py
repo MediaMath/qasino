@@ -4,6 +4,7 @@ import simplejson as json
 import re
 import time
 import sqlite3
+import StringIO
 
 from pprint import pprint
 from twisted.web.resource import Resource
@@ -12,6 +13,7 @@ from twisted.web import http
 
 import util
 import qasino_table
+import csv_table_reader
 
 class MyLoggingHTTPChannel(http.HTTPChannel):
     def connectionMade(self):
@@ -123,7 +125,43 @@ class HttpReceiver(Resource):
         #pprint(request.__dict__)
         obj = dict()
 
-        # The post body should be a json string.
+        if 'op' not in request.args:
+            logging.error("HttpReceiver: No op specified for POST request: %s", ','.join(request.args))
+            response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "No op specified" }
+            return json.dumps(response_meta)
+
+        ## Add CSV table data op
+
+        if request.args['op'][0] == "add_csv_table_data":
+            logging.info("HttpReceiver: Add table data (CSV).")
+
+            csv = csv_table_reader.CsvTableReader()
+
+            (table, error) = csv.read_table(request.content, None,
+                                            skip_linenos={4},
+                                            options_lineno=0,
+                                            types_lineno=3,
+                                            tablename_lineno=1,
+                                            colnames_lineno=2)
+
+            if table == None:
+                logging.info("HttpReceiver: Failure parsing csv input: {}".format(error))
+                response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(error) }
+                return json.dumps(response_meta)
+
+            response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
+
+            try:
+                if table.get_property("static"):
+                    self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
+                else:
+                    self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
+            except Exception as e:
+                response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
+            
+            return json.dumps(response_meta)
+
+        ### The rest of the ops expect a JSON post body.
 
         try:
             # request.content might be a temp file if the content length is over some threshold.
@@ -131,14 +169,10 @@ class HttpReceiver(Resource):
             obj = json.load(request.content)
             #print "Received POST:"
             #print obj
+
         except Exception as e:
             logging.info("HttpReceiver: ERROR failed to get/parse content of POST: %s", str(e))
             response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "Could not parse POST body: %s" % str(e) }
-            return json.dumps(response_meta)
-
-        if 'op' not in request.args:
-            logging.error("HttpReceiver: No op specified for POST request: %s", ','.join(request.args))
-            response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : "No op specified" }
             return json.dumps(response_meta)
 
         ## Table list op
@@ -152,7 +186,8 @@ class HttpReceiver(Resource):
         ## Add table data op
 
         if request.args['op'][0] == "add_table_data":
-            logging.info("HttpReceiver: Add table data.")
+
+            logging.info("HttpReceiver: Add table data (JSON).")
             table = qasino_table.QasinoTable()
             table.from_obj(obj)
             response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
