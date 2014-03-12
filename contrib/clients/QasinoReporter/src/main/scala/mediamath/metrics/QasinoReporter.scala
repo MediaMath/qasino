@@ -562,6 +562,15 @@ class QasinoReporter(builder: Builder) extends
     }
   }
 
+  private[metrics] def reportThrowExceptions():Unit = {
+    reportThrowExceptions(
+      registry.getGauges(filter),
+      registry.getCounters(filter),
+      registry.getHistograms(filter),
+      registry.getMeters(filter),
+      registry.getTimers(filter))
+  }
+
   private[metrics] def reportThrowExceptions (
 			gauges: JavaSortedMap[String, Gauge[_]],
 			counters: JavaSortedMap[String, Counter],
