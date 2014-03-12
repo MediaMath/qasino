@@ -557,6 +557,8 @@ class QasinoReporter(builder: Builder) extends
     try {
       reportThrowExceptions(gauges, counters, histograms, meters, timers)
     } catch {
+      case ex:IllegalArgumentException =>
+        throw(ex)
       case ex:Throwable =>
         log.error("Failed to report data", ex)
     }
