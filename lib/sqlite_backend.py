@@ -33,6 +33,7 @@ class SqlConnections(object):
         self.data_manager = data_manager
         self.tables = {}
         self.connections = {}
+        self.stats = {}
 
         self.archive_db_dir = archive_db_dir
         self.main_thread = thread_id
@@ -128,12 +129,17 @@ class SqlConnections(object):
 
     def do_select(self, txn, sql):
 
+        self.stats['sql_received'] = self.stats.get('sql_received', 0) + 1
+
         try: 
             retval = txn.execute(sql)
 
         except Exception as e:
+
+            self.stats['sql_errors'] = self.stats.get('sql_errors', 0) + 1
+
             return { "retval": 1, "error_message" : e }
-            
+
         # Find the max column with for each column.
 
         max_widths = {}
@@ -196,6 +202,8 @@ class SqlConnections(object):
             saved_rows.append(saved_row)
 
 
+        self.stats['sql_completed'] = self.stats.get('sql_completed', 0) + 1
+
         data = { "column_names" : column_names,
                  "rows" : saved_rows }
 
@@ -236,6 +244,8 @@ class SqlConnections(object):
         
     def do_update_table(self, txn, table, identity):
 
+        self.stats['updates_received'] = self.stats.get('updates_received', 0) + 1
+
         key_cols_str = table.get_property('keycols')
 
         column_names = table.get_column_names()
@@ -253,8 +263,11 @@ class SqlConnections(object):
 
         try:
             txn.execute(create_index_sql)
+
         except Exception as e:
             logging.info("ERROR: Failed to create unique index for table update: '%s': ( %s )", str(e), create_index_sql)
+
+            self.stats['update_errors'] = self.stats.get('update_errors', 0) + 1
             return
 
         sql = "INSERT OR REPLACE INTO %s (%s) VALUES (%s)" % (tablename, ', '.join(column_names), ', '.join([ '?' for x in column_names ]) )
@@ -268,6 +281,8 @@ class SqlConnections(object):
 
             rowcount += txn.getconnection().changes()
 
+        self.stats['updates_completed'] = self.stats.get('updates_completed', 0) + 1
+
         return rowcount
 
     def do_insert_table(self, txn, table):
@@ -276,6 +291,8 @@ class SqlConnections(object):
         statements (supported in sqlite 3.7.11) for speed.
         """
         
+        self.stats['inserts_received'] = self.stats.get('inserts_received', 0) + 1
+
         rowcount = 0
 
         base_query = "INSERT INTO %s (%s) VALUES " % (table.get_tablename(), ",".join( table.get_column_names() ) )
@@ -322,6 +339,7 @@ class SqlConnections(object):
 
             txn.execute(sql, bind_values)
 
+        self.stats['inserts_completed'] = self.stats.get('inserts_completed', 0) + 1
 
         return rowcount
 
@@ -347,6 +365,42 @@ class SqlConnections(object):
         table.add_column("generation_start_epoch", "int")
 
         table.add_row( [ str(db_generation_number), generation_duration_s, generation_start_epoch ] )
+
+        return self.add_table_data(txn, table, Identity.get_identity())
+
+    def insert_sql_stats_table(self, txn, sql_backend_reader):
+        """ 
+        Adds a status table (qasino_server_sql_stats) to the database in each generation.
+        Note we are actually saving stats from the "reader" backend because that is where 
+        sql stats are logged.
+        """
+        table = qasino_table.QasinoTable("qasino_server_sql_stats")
+        table.add_column("sql_received",  "int")
+        table.add_column("sql_completed", "int")
+        table.add_column("sql_errors",    "int")
+
+        table.add_row( [ sql_backend_reader.stats.get('sql_received', 0),
+                         sql_backend_reader.stats.get('sql_completed', 0),
+                         sql_backend_reader.stats.get('sql_errors', 0) ] )
+
+        return self.add_table_data(txn, table, Identity.get_identity())
+
+    def insert_update_stats_table(self, txn):
+        """ 
+        Adds a status table (qasino_server_update_stats) to the database in each generation.
+        """
+        table = qasino_table.QasinoTable("qasino_server_update_stats")
+        table.add_column("updates_received",  "int")
+        table.add_column("updates_completed", "int")
+        table.add_column("update_errors",     "int")
+        table.add_column("inserts_received",  "int")
+        table.add_column("inserts_completed", "int")
+
+        table.add_row( [ self.stats.get('updates_received', 0), 
+                         self.stats.get('updsates_completed', 0),
+                         self.stats.get('update_errors', 0),
+                         self.stats.get('inserts_received', 0), 
+                         self.stats.get('inserts_completed', 0) ] )
 
         return self.add_table_data(txn, table, Identity.get_identity())
 

@@ -227,6 +227,10 @@ if __name__ == "__main__":
                       action="store_true",
                       help="Don't verify SSL certificates.")
 
+    parser.add_option("-q", "--query", dest="query", 
+                      action="append",
+                      help="Query to execute and exit.")
+
     (options, args) = parser.parse_args()
 
     if options.identity != None:
@@ -280,6 +284,13 @@ if __name__ == "__main__":
         conn = QasinoZMQConnection(options)
         conn.connect()
 
-    QasinoCmd(conn).cmdloop()
+    if options.query:
 
+        # Command line query string - execute and exit.
+        for query in options.query:
+            QasinoCmd(conn).send_query(query)
 
+    else:
+
+        # Enter the command loop.
+        QasinoCmd(conn).cmdloop()

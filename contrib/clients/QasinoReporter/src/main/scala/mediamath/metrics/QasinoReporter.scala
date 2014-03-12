@@ -4,7 +4,7 @@ import com.codahale.metrics._
 import com.fasterxml.jackson.databind.ObjectMapper
 import dispatch._
 import Defaults._
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{Executors, ExecutorService, TimeUnit}
 import scala.collection
 import scala.collection.JavaConversions._
 import java.net.{Inet4Address, NetworkInterface}
@@ -13,13 +13,14 @@ import java.util.{SortedMap => JavaSortedMap}
 import scala.language.existentials
 import scala.collection.immutable.ListMap
 import org.slf4j.LoggerFactory
-import scala.concurrent.Await
+import scala.concurrent.{ExecutionContext, Await}
 import scala.concurrent.duration._
 
 object QasinoReporter {
 
   val DEFAULT_PORT = 15597
   val DEFAULT_SECURE_PORT = 443
+  val DEFAULT_NUM_THREADS = 1
 
   val defaultColumnsTypes = Seq[String](
     "string" // host
@@ -81,6 +82,7 @@ object QasinoReporter {
     private[metrics] var db_persist: Boolean = false
     private[metrics] var groupings: Set[String] = SortedSet.empty
     private[metrics] var filter: MetricFilter = MetricFilter.ALL
+    private[metrics] var numThreads: Int = DEFAULT_NUM_THREADS
     private[metrics] var rateUnit: TimeUnit = TimeUnit.SECONDS
     private[metrics] var durationUnit: TimeUnit = TimeUnit.MILLISECONDS
 
@@ -139,6 +141,11 @@ object QasinoReporter {
       this
     }
 
+    def withNumThreads(numThreads: Int): this.type = {
+      this.numThreads = numThreads
+      this
+    }
+
     def convertRatesTo(rateUnit: TimeUnit): this.type = {
       this.rateUnit = rateUnit
       this
@@ -189,9 +196,19 @@ class QasinoReporter(builder: Builder) extends
 	val filter: MetricFilter = builder.filter
 	val rateUnit: TimeUnit = builder.rateUnit
 	val durationUnit: TimeUnit = builder.durationUnit
+  val numThreads: Int = builder.numThreads
 
   // Set up logger
   val log = LoggerFactory.getLogger(this.getClass)
+
+  // Create the execution context for dispatch to run in
+  val exc: ExecutionContext = new ExecutionContext {
+    val threadPool = Executors.newFixedThreadPool(numThreads)
+
+    override def execute(runnable: Runnable): Unit = threadPool.submit(runnable)
+
+    override def reportFailure(t: Throwable): Unit = throw t
+  }
 
   // Set up Dispatch HTTP client
 	private val dispatchHost = if (secure)
