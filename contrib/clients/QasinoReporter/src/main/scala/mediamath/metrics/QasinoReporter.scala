@@ -506,22 +506,15 @@ class QasinoReporter(builder: Builder) extends
 		jsonForMetrics
 	}
 
-	def reportToQasino(nameToMetric: ListMap[String, Metric]): Option[Throwable] = {
+	def reportToQasino(nameToMetric: ListMap[String, Metric]): Unit = {
     var futures: List[Future[String]] = List.empty[Future[String]]
-    try {
-      for (jsonStr <- getJsonForMetrics(nameToMetric)) {
-        val postWithParams = dispatchRequest << jsonStr
-        val f = dispatch.Http(postWithParams OK as.String)
-        futures = f +: futures
-      }
+    for (jsonStr <- getJsonForMetrics(nameToMetric)) {
+      val postWithParams = dispatchRequest << jsonStr
+      val f = dispatch.Http(postWithParams OK as.String)
+      futures = f +: futures
+    }
 
-      Await.result(Future.sequence(futures), scala.concurrent.duration.Duration.Inf) // Block until all futures are resolved})
-    }
-    catch {
-      case ex: Throwable =>
-       return Some(ex)
-    }
-    None
+    Await.result(Future.sequence(futures), scala.concurrent.duration.Duration.Inf) // Block until all futures are resolved})
 	}
 
 	def combineMetricsToMap(
@@ -538,6 +531,21 @@ class QasinoReporter(builder: Builder) extends
 	}
 
   override def report (
+      gauges: JavaSortedMap[String, Gauge[_]],
+      counters: JavaSortedMap[String, Counter],
+      histograms: JavaSortedMap[String, Histogram],
+      meters: JavaSortedMap[String, Meter],
+      timers: JavaSortedMap[String, Timer]) {
+
+    try {
+      reportThrowExceptions(gauges, counters, histograms, meters, timers)
+    } catch {
+      case ex:Throwable =>
+        log.error("Failed to report data", ex)
+    }
+  }
+
+  private[metrics] def reportThrowExceptions (
 			gauges: JavaSortedMap[String, Gauge[_]],
 			counters: JavaSortedMap[String, Counter],
 			histograms: JavaSortedMap[String, Histogram],
@@ -563,17 +571,13 @@ class QasinoReporter(builder: Builder) extends
         throw ex
     }
 
-    val ex: Option[Throwable] = reportToQasino(combineMetricsToMap(
+    reportToQasino(combineMetricsToMap(
       sanitizedRegistry.getGauges,
       sanitizedRegistry.getCounters,
       sanitizedRegistry.getHistograms,
       sanitizedRegistry.getMeters,
       sanitizedRegistry.getTimers
     ))
-
-    if (ex.isInstanceOf[Some[Throwable]]) {
-      log.error("Failed to report data", ex.get)
-    }
 	}
 
   def shutdown(): Unit = {
