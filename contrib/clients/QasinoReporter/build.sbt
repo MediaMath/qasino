@@ -8,13 +8,13 @@ organizationHomepage := Some(url("http://mediamath.com"))
 
 scalaVersion := "2.10.3"
 
-credentials += Credentials("Artifactory Realm", "54.197.54.187", "eng", "1qa2ws3e")
+credentials += Credentials("Restricted", "54.197.54.187", "eng", "1qa2ws3e")
 
-externalResolvers := Seq("Repo" at "http://54.197.54.187:8081/artifactory/repo")
+externalResolvers := Seq("Repo" at "https://54.197.54.187/artifactory/repo")
 
 publishTo := {
   scala.util.Properties.propIsSet("deploy_snapshot") match {
-    case true => Some("Snapshots" at "http://54.197.54.187:8081/artifactory/snapshots-local")
+    case true => Some("Snapshots" at "https://54.197.54.187/artifactory/snapshots-local")
     case false => None
   }
 }
