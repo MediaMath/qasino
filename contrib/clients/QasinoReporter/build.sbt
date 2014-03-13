@@ -8,6 +8,17 @@ organizationHomepage := Some(url("http://mediamath.com"))
 
 scalaVersion := "2.10.3"
 
+credentials += Credentials("Artifactory Realm", "54.197.54.187", "eng", "1qa2ws3e")
+
+externalResolvers := Seq("Repo" at "http://54.197.54.187:8081/artifactory/repo")
+
+publishTo := {
+  scala.util.Properties.propIsSet("deploy_snapshot") match {
+    case true => Some("Snapshots" at "http://54.197.54.187:8081/artifactory/snapshots-local")
+    case false => None
+  }
+}
+
 libraryDependencies ++= Seq(
   "org.slf4j" % "slf4j-api" % "1.7.5",
   "ch.qos.logback" % "logback-classic" % "1.0.13",
