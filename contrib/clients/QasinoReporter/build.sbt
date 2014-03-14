@@ -24,6 +24,7 @@ libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % "1.0.13",
   "ch.qos.logback" % "logback-core" % "1.0.13",
 	"com.codahale.metrics" % "metrics-core" % "3.0.1",
+  "mediamath" %% "data-infra-commons" % "0.1-SNAPSHOT",
 	"net.databinder.dispatch" %% "dispatch-core" % "0.11.0",
 	"com.fasterxml.jackson.core" % "jackson-databind" % "2.3.1",
 	"org.scalatest" %% "scalatest" % "2.0" % "test",

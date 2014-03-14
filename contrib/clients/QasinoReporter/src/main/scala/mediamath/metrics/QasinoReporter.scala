@@ -4,9 +4,8 @@ import com.codahale.metrics._
 import com.fasterxml.jackson.databind.ObjectMapper
 import dispatch._
 import Defaults._
-import java.util.concurrent.{Executors, ExecutorService, TimeUnit}
+import java.util.concurrent.{Executors, TimeUnit}
 import scala.collection
-import scala.collection.JavaConversions._
 import java.net.{Inet4Address, NetworkInterface}
 import collection._
 import java.util.{SortedMap => JavaSortedMap}
@@ -15,12 +14,19 @@ import scala.collection.immutable.ListMap
 import org.slf4j.LoggerFactory
 import scala.concurrent.{ExecutionContext, Await}
 import scala.concurrent.duration._
+import java.io.IOException
+import scala.collection.JavaConversions._
+import mediamath.utils.PrefixedEnumeration
 
 object QasinoReporter {
 
+  val DEFAULT_HOST = "localhost"
   val DEFAULT_PORT = 15597
   val DEFAULT_SECURE_PORT = 443
   val DEFAULT_NUM_THREADS = 1
+
+  val QASINO_PATH_DEFAULT = "request"
+  val QASINO_OP_DEFAULT = "add_table_data"
 
   val defaultColumnsTypes = Seq[String](
     "string" // host
@@ -37,32 +43,20 @@ object QasinoReporter {
 	val registryNameSeparator = "_"
 	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
 
-	def sanitizeString(name: String): String = {
-		// Remove any instances of the illegal characters from the name
+  /** Remove any instances of the illegal characters from the name */
+  def sanitizeString(name: String): String =
 		illegalCharRegex.replaceAllIn(name.toLowerCase, registryNameSeparator)
-	}
 
-	def sanitizeRegistry(registry: MetricRegistry): MetricRegistry = {
-		// Return a new MetricRegistry with names sanitized for qasino
-		val sanitizedRegistry = new MetricRegistry
-		val metricMap = mapAsScalaMap(registry.getMetrics)
-		for ((name, metric) <- metricMap) {
-			sanitizedRegistry.register(sanitizeString(name), metric)
-		}
-		sanitizedRegistry
-	}
-
+  /** Get a non-loopback ip address for host (if possible) */
 	def getFirstNonLoopbackAddress: String = {
-		val interfaces = NetworkInterface.getNetworkInterfaces
-		val nonLoopbackInterfaces = interfaces.filter(!_.isLoopback)
-		val default = "unavailable"
-		var address = default
-		for (i <- nonLoopbackInterfaces if address == default) {
-			for (addr <- i.getInetAddresses if addr.isInstanceOf[Inet4Address] && address == default) {
-				address = addr.getHostAddress
-			}
-		}
-		address
+		for {
+      iface <- NetworkInterface.getNetworkInterfaces.filter(!_.isLoopback)
+      addr <- iface.getInetAddresses if addr.isInstanceOf[Inet4Address]
+    } {
+      return addr.getHostAddress
+    }
+
+    "0.0.0.0"
 	}
 
   def forRegistry(registry: MetricRegistry): Builder = {
@@ -71,15 +65,14 @@ object QasinoReporter {
 
   class Builder(reg: MetricRegistry) {
     private[metrics] var registry: MetricRegistry = reg
-    private[metrics] var host: String = "localhost"
-    private[metrics] var port: Int = DEFAULT_PORT
+    private[metrics] var host: String = DEFAULT_HOST
+    private[metrics] var port: Int = -1
     private[metrics] var secure: Boolean = false
-    private[metrics] var username: String = ""
-    private[metrics] var password: String = ""
-    private[metrics] var uri: String = "request"
-    private[metrics] var db_op: String = "add_table_data"
-    private[metrics] var name: String = "QasinoReporter"
-    private[metrics] var db_persist: Boolean = false
+    private[metrics] var username: String = null
+    private[metrics] var password: String = null
+    private[metrics] var path: String = QASINO_PATH_DEFAULT
+    private[metrics] var op: String = QASINO_OP_DEFAULT
+    private[metrics] var persist: Boolean = false
     private[metrics] var groupings: Set[String] = SortedSet.empty
     private[metrics] var filter: MetricFilter = MetricFilter.ALL
     private[metrics] var numThreads: Int = DEFAULT_NUM_THREADS
@@ -111,23 +104,18 @@ object QasinoReporter {
       this
     }
 
-    def withUri(uri: String): this.type = {
-      this.uri = uri
+    def withPath(path: String): this.type = {
+      this.path = path
       this
     }
 
     def withOp(db_op: String): this.type = {
-      this.db_op = db_op
-      this
-    }
-
-    def withName(name: String): this.type = {
-      this.name = name
+      this.op = db_op
       this
     }
 
     def withPersist(db_persist: Boolean = true): this.type = {
-      this.db_persist = db_persist
+      this.persist = db_persist
       this
     }
 
@@ -157,28 +145,29 @@ object QasinoReporter {
     }
 
     def build(): QasinoReporter = {
-      if (secure && port == DEFAULT_PORT) port = DEFAULT_SECURE_PORT
+      if ( secure && (username == null || password == null) ) throw new IllegalArgumentException("username and password are required")
+
+      if ( port <= 0 )
+        port = if ( secure ) DEFAULT_SECURE_PORT else DEFAULT_PORT
+
       new QasinoReporter(this)
     }
   }
 
-  private def registryHasCollisions(registry: MetricRegistry): Boolean = {
-    // Check whether we have any name collisions after some sanitizing
-    val namesSet = mutable.Set[String]()
-    val registryNames = registry.getNames
-    for (name <- asScalaSet(registryNames)) {
-      val sanitizedName = sanitizeString(name)
-      namesSet.add(sanitizedName)
-    }
-    namesSet.size < registryNames.size()
-  }
+  class QasinoReporterException(message:String, cause:Throwable) extends IOException(message, cause)
+  class ConnectionException(cause:Throwable) extends QasinoReporterException("Connection Failure", cause)
+  class HTTPException(message:String, cause:Throwable) extends QasinoReporterException(message, cause)
+  class ClientException(cause:Throwable) extends HTTPException("Client Exception", cause)
+  class ServerException(cause:Throwable) extends HTTPException("Server Exception", cause)
+  class AuthenticationException(cause:Throwable = null) extends HTTPException("401 Not Authorized", cause)
+
 }
 import QasinoReporter._
 
 class QasinoReporter(builder: Builder) extends
 		ScheduledReporter(
       builder.registry,
-      builder.name,
+      classOf[QasinoReporter].getSimpleName,
       builder.filter,
       builder.rateUnit,
       builder.durationUnit) {
@@ -188,10 +177,9 @@ class QasinoReporter(builder: Builder) extends
 	val secure: Boolean = builder.secure
   val username: String = builder.username
   val password: String = builder.password
-	val uri: String = builder.uri
-	val db_op: String = builder.db_op
-	val db_persist: Boolean = builder.db_persist
-	val name: String = builder.name
+	val path: String = builder.path
+	val op: String = builder.op
+	val persist: Boolean = builder.persist
 	val groupings: Set[String] = builder.groupings
 	val filter: MetricFilter = builder.filter
 	val rateUnit: TimeUnit = builder.rateUnit
@@ -211,40 +199,71 @@ class QasinoReporter(builder: Builder) extends
   }
 
   // Set up Dispatch HTTP client
-	private val dispatchHost = if (secure)
-    dispatch.host(host, port).secure
-  else
-    dispatch.host(host, port)
-	private val dispatchRequest = if (secure)
-    (dispatchHost / uri).POST <<? Map("op" -> db_op) as_!(username, password)
-  else
-    (dispatchHost / uri).POST <<? Map("op" -> db_op)
+	private val dispatchHost =
+    if (secure)
+      dispatch.host(host, port).secure
+    else
+      dispatch.host(host, port)
+
+	private val dispatchRequest =
+    if (secure)
+      (dispatchHost / path).POST <<? Map("op" -> op) as_!(username, password)
+    else
+      (dispatchHost / path).POST <<? Map("op" -> op)
 
 	// JSON mapper singleton
 	private val mapper = new ObjectMapper()
 
-	object QasinoRequestIdentifier extends scala.Enumeration {
+	object QasinoRequestIdentifier extends PrefixedEnumeration {
 		// Enumeration for all the JSON keys for qasino for safety
-		type QasinoRequestIdentifier = Value
-		val op, identity, tablename, table, column_names, column_types, rows, persist = Value
+		type QasinoRequestIdentifier = PrefixedEnumeration
+
+		val key_op, key_identity, key_tablename, key_table, key_column_names, key_column_types, key_rows, key_persist = PrefixedValue("key_")
 	}
 	import QasinoRequestIdentifier._
 
 	// Default map for JSON
-	private[this] val db_persist_int = if (db_persist) 1 else 0
 	private val defaultDataJson = mutable.Map[String, Any](
-		op.toString -> db_op,
-		identity.toString -> getFirstNonLoopbackAddress,
-		persist.toString -> db_persist_int,
-		table.toString -> mutable.Map[String, Any](
-			tablename.toString -> Unit,
-			column_names.toString-> Unit,
-			column_types.toString -> Unit
+    s"$key_op" -> op,
+    s"$key_identity" -> getFirstNonLoopbackAddress,
+    s"$key_persist" -> { if (persist) 1 else 0 },
+    s"$key_table" -> mutable.Map[String, Any](
+      s"$key_tablename" -> Unit,
+      s"$key_column_names" -> Unit,
+      s"$key_column_types" -> Unit
 		)
 	)
 
+  private[metrics] def sanitizeRegistry(registry: MetricRegistry): MetricRegistry = {
+    // Return a new MetricRegistry with names sanitized for qasino
+    val sanitizedRegistry = new MetricRegistry
+    val metricMap = mapAsScalaMap(registry.getMetrics)
+    for ((name, metric) <- metricMap) {
+      sanitizedRegistry.register(sanitizeString(name), metric)
+    }
+
+    if (registryHasCollisions(sanitizedRegistry))
+      throw new IllegalArgumentException("Found a collision within registry names after sanitation")
+
+    if (hasIllegalColumnNames(sanitizedRegistry))
+      throw new IllegalArgumentException("Found a column beginning with a non-alpha character")
+
+    sanitizedRegistry
+  }
+
+  private[metrics] def registryHasCollisions(registry: MetricRegistry): Boolean = {
+    // Check whether we have any name collisions after some sanitizing
+    val namesSet = mutable.Set[String]()
+    val registryNames = registry.getNames
+    for (name <- asScalaSet(registryNames)) {
+      val sanitizedName = sanitizeString(name)
+      namesSet.add(sanitizedName)
+    }
+    namesSet.size < registryNames.size()
+  }
+
   // Check whether illegal column names would be generated by the current registry
-  private def hasIllegalColumnNames(registry: MetricRegistry): Boolean = {
+  private[metrics] def hasIllegalColumnNames(registry: MetricRegistry): Boolean = {
     var hasIllegalColName = false
     for (name <- registry.getNames if !hasIllegalColName) {
       val thisGrouping: Option[String] =
@@ -461,12 +480,12 @@ class QasinoReporter(builder: Builder) extends
 		val col_types = seqAsJavaList(getColumnTypes(metric))
 		val r = java.util.Arrays.asList(seqAsJavaList(getColumnValues(metric)))
 		val tableMap = mutable.Map[String, Any](
-			tablename.toString -> name,
-			column_names.toString -> col_names,
-			column_types.toString -> col_types,
-			rows.toString -> r
+			s"$key_tablename" -> name,
+      s"$key_column_names" -> col_names,
+      s"$key_column_types" -> col_types,
+      s"$key_rows" -> r
 		)
-		postDataMap = postDataMap + (table.toString -> mapAsJavaMap(tableMap))
+		postDataMap = postDataMap + (s"$key_table" -> mapAsJavaMap(tableMap))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
@@ -477,12 +496,12 @@ class QasinoReporter(builder: Builder) extends
 		val col_types =  seqAsJavaList(getGroupedColumnTypes(groupedMetrics, prefix))
 		val r = java.util.Arrays.asList(seqAsJavaList(getGroupedColumnValues(groupedMetrics, prefix)))
 		val tableMap = mutable.Map[String, Any](
-			tablename.toString -> prefix,
-			column_names.toString -> col_names,
-			column_types.toString -> col_types,
-			rows.toString -> r
+      s"$key_tablename" -> prefix,
+      s"$key_column_names" -> col_names,
+      s"$key_column_types" -> col_types,
+      s"$key_rows" -> r
 		)
-		postDataMap = postDataMap + (table.toString -> mapAsJavaMap(tableMap))
+		postDataMap = postDataMap + (s"$key_table" -> mapAsJavaMap(tableMap))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
@@ -531,7 +550,20 @@ class QasinoReporter(builder: Builder) extends
       futures = f +: futures
     }
 
-    Await.result(Future.sequence(futures), scala.concurrent.duration.Duration.Inf) // Block until all futures are resolved})
+    try {
+      try {
+        Await.result(Future.sequence(futures), scala.concurrent.duration.Duration.Inf) // Block until all futures are resolved})
+      } catch {
+        case ex:java.util.concurrent.ExecutionException => throw ex.getCause
+      }
+    } catch {
+      case ex:dispatch.StatusCode =>
+        if ( ex.code == 401 ) throw new AuthenticationException(ex)
+        if ( ex.code / 100 == 4 ) throw new ClientException(ex)
+        if ( ex.code / 100 == 5 ) throw new ServerException(ex)
+        throw new HTTPException("Unexpected HTTP response", ex)
+      case ex:java.net.ConnectException => throw new ConnectionException(ex)
+    }
 	}
 
 	def combineMetricsToMap(
@@ -557,8 +589,7 @@ class QasinoReporter(builder: Builder) extends
     try {
       reportThrowExceptions(gauges, counters, histograms, meters, timers)
     } catch {
-      case ex:IllegalArgumentException =>
-        throw(ex)
+      case ex:IllegalArgumentException => throw ex
       case ex:Throwable =>
         log.error("Failed to report data", ex)
     }
@@ -581,23 +612,6 @@ class QasinoReporter(builder: Builder) extends
 			timers: JavaSortedMap[String, Timer]) {
 
     val sanitizedRegistry = sanitizeRegistry(registry)
-    try {
-      if (registryHasCollisions(registry)) {
-        throw new IllegalArgumentException(
-          "Found a collision within registry names after sanitation"
-        )
-      }
-      if (hasIllegalColumnNames(registry)) {
-        throw new IllegalArgumentException(
-          "Found a column beginning with a non-alpha character"
-        )
-      }
-    }
-    catch {
-      case ex: Throwable =>
-        stop()
-        throw ex
-    }
 
     reportToQasino(combineMetricsToMap(
       sanitizedRegistry.getGauges,
