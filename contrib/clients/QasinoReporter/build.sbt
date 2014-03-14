@@ -29,3 +29,7 @@ libraryDependencies ++= Seq(
 	"org.scalatest" %% "scalatest" % "2.0" % "test",
 	"com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.3.1"
 )
+
+testOptions in ThisBuild <+= (target in Test) map {
+  t => Tests.Argument("-o", "-u", t + "/test-reports")
+}
