@@ -10,7 +10,8 @@ scalaVersion := "2.10.3"
 
 credentials += Credentials("Restricted", "ec2-54-83-51-43.compute-1.amazonaws.com", "eng", "1qa2ws3e")
 
-externalResolvers += "Repo" at "https://ec2-54-83-51-43.compute-1.amazonaws.com/artifactory/repo"
+externalResolvers := Resolver.withDefaultResolvers(resolvers.value, mavenCentral = false) :+
+  ("proxy" at "https://ec2-54-83-51-43.compute-1.amazonaws.com/artifactory/repo")
 
 publishTo := {
   scala.util.Properties.propIsSet("deploy_snapshot") match {

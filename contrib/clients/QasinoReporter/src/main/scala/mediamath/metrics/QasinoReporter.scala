@@ -216,7 +216,7 @@ class QasinoReporter(builder: Builder) extends
 
 	object QasinoRequestIdentifier extends PrefixedEnumeration {
 		// Enumeration for all the JSON keys for qasino for safety
-		type QasinoRequestIdentifier = PrefixedEnumeration
+		type QasinoRequestIdentifier = PrefixedValue
 
 		val key_op, key_identity, key_tablename, key_table, key_column_names, key_column_types, key_rows, key_persist = PrefixedValue("key_")
 	}
