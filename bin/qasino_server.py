@@ -63,7 +63,7 @@ if __name__ == "__main__":
                       help="The length of a collection interval (generation) in seconds.", metavar="SECONDS")
     parser.add_option("-v", "--views-file", dest="views_file", default='views.conf',
                       help="A file containing a list of views to create.", metavar="FILE")
-    parser.add_option("-K", "--keys-dir", dest="keys_dir", default='/opt/qasino/etc/keys',
+    parser.add_option("-K", "--keys-dir", dest="keys_dir", default='/opt/qasino/etc/keys/',
                       help="Directory where server keys can be found.", metavar="DIR")
     parser.add_option("-p", "--htpasswd-file", dest="htpasswd_file", default='/opt/qasino/etc/htpasswd',
                       help="Path to htpasswd file.", metavar="FILE")
