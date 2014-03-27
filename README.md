@@ -53,7 +53,7 @@ You'll need to have the following python libraries installed:
 - python-httplib2
 - python-apsw
 - python-yaml
-- pythong-requests
+- python-requests
 
 ##Running
 
