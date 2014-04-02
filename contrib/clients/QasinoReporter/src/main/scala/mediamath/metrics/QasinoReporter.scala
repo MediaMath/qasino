@@ -3,7 +3,6 @@ package mediamath.metrics
 import com.codahale.metrics._
 import com.fasterxml.jackson.databind.ObjectMapper
 import dispatch._
-import Defaults._
 import java.util.concurrent.{Executors, TimeUnit}
 import scala.collection
 import java.net.{Inet4Address, NetworkInterface}
