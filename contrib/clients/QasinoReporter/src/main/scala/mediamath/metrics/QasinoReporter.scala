@@ -17,7 +17,11 @@ import scala.concurrent.duration._
 import java.io.IOException
 import scala.collection.JavaConversions._
 import mediamath.utils.PrefixedEnumeration
+import QasinoReporter._
 
+/**
+ * Qasino metrics reporter
+ */
 object QasinoReporter {
 
   val DEFAULT_HOST = "localhost"
@@ -27,18 +31,6 @@ object QasinoReporter {
 
   val QASINO_PATH_DEFAULT = "request"
   val QASINO_OP_DEFAULT = "add_table_data"
-
-  val defaultColumnsTypes = Seq[String](
-    "string" // host
-  )
-
-  val defaultColumnsNames = Seq[String](
-    "host" // host
-  )
-
-  val defaultColumnsValues = Array[Any](
-    getFirstNonLoopbackAddress // host
-  )
 
 	val registryNameSeparator = "_"
 	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
@@ -59,10 +51,14 @@ object QasinoReporter {
     "0.0.0.0"
 	}
 
+  /** Create a new builder for a given registry */
   def forRegistry(registry: MetricRegistry): Builder = {
     new Builder(registry)
   }
 
+  /**
+   * Builder for creating a QasinoReporter
+   */
   class Builder(reg: MetricRegistry) {
     private[metrics] var registry: MetricRegistry = reg
     private[metrics] var host: String = DEFAULT_HOST
@@ -160,10 +156,11 @@ object QasinoReporter {
   class ClientException(cause:Throwable) extends HTTPException("Client Exception", cause)
   class ServerException(cause:Throwable) extends HTTPException("Server Exception", cause)
   class AuthenticationException(cause:Throwable = null) extends HTTPException("401 Not Authorized", cause)
-
 }
-import QasinoReporter._
 
+/**
+ * Qasino metics reporter
+ */
 class QasinoReporter(builder: Builder) extends
 		ScheduledReporter(
       builder.registry,
@@ -187,10 +184,13 @@ class QasinoReporter(builder: Builder) extends
   val numThreads: Int = builder.numThreads
 
   // Set up logger
-  val log = LoggerFactory.getLogger(this.getClass)
+  private val log = LoggerFactory.getLogger(this.getClass)
+
+  // used for identifing self to qasino
+  private val reporterHost = getFirstNonLoopbackAddress
 
   // Create the execution context for dispatch to run in
-  val exc: ExecutionContext = new ExecutionContext {
+  private implicit val exc: ExecutionContext = new ExecutionContext {
     val threadPool = Executors.newFixedThreadPool(numThreads)
 
     override def execute(runnable: Runnable): Unit = threadPool.submit(runnable)
@@ -205,6 +205,7 @@ class QasinoReporter(builder: Builder) extends
     else
       dispatch.host(host, port)
 
+  // create Dispatch
 	private val dispatchRequest =
     if (secure)
       (dispatchHost / path).POST <<? Map("op" -> op) as_!(username, password)
@@ -214,7 +215,8 @@ class QasinoReporter(builder: Builder) extends
 	// JSON mapper singleton
 	private val mapper = new ObjectMapper()
 
-	object QasinoRequestIdentifier extends PrefixedEnumeration {
+  // Qasino column names
+	private object QasinoRequestIdentifier extends PrefixedEnumeration {
 		// Enumeration for all the JSON keys for qasino for safety
 		type QasinoRequestIdentifier = PrefixedValue
 
@@ -225,7 +227,7 @@ class QasinoReporter(builder: Builder) extends
 	// Default map for JSON
 	private val defaultDataJson = mutable.Map[String, Any](
     s"$key_op" -> op,
-    s"$key_identity" -> getFirstNonLoopbackAddress,
+    s"$key_identity" -> reporterHost,
     s"$key_persist" -> { if (persist) 1 else 0 },
     s"$key_table" -> mutable.Map[String, Any](
       s"$key_tablename" -> Unit,
@@ -234,6 +236,7 @@ class QasinoReporter(builder: Builder) extends
 		)
 	)
 
+  // create a copy of the registry with names as valid qasino columns
   private[metrics] def sanitizeRegistry(registry: MetricRegistry): MetricRegistry = {
     // Return a new MetricRegistry with names sanitized for qasino
     val sanitizedRegistry = new MetricRegistry
@@ -251,6 +254,7 @@ class QasinoReporter(builder: Builder) extends
     sanitizedRegistry
   }
 
+  // check for namespace collisions caused by sanitization
   private[metrics] def registryHasCollisions(registry: MetricRegistry): Boolean = {
     // Check whether we have any name collisions after some sanitizing
     val namesSet = mutable.Set[String]()
@@ -278,9 +282,10 @@ class QasinoReporter(builder: Builder) extends
   }
 
 	// Shorthand for a two dimensional map of any type
-	type TwoDMap[K1, K2, Val] = ListMap[K1, ListMap[K2, Val]]
+	private type TwoDMap[K1, K2, Val] = ListMap[K1, ListMap[K2, Val]]
 
-	def getColumnNames(metric: Metric, prefixWithSeparator: String = ""): Seq[String] = metric match {
+  /** map metric fields to column names */
+  private def getColumnNames(metric: Metric, prefixWithSeparator: String = ""): Seq[String] = metric match {
 		// Get the qasino column names for any metric type
 		case gauge: Gauge[_] =>
 			Seq(
@@ -336,88 +341,70 @@ class QasinoReporter(builder: Builder) extends
 		case _ => Seq.empty[String]
 	}
 
-	def getGroupedColumnNames(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
-		var groupColumnNames = defaultColumnsNames
-		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
-		for ((suffix, metric) <- metricMap) {
-			val thisMetricColumnNames = getColumnNames(metric, suffix + "_")
-			groupColumnNames = groupColumnNames ++ thisMetricColumnNames
-		}
-		groupColumnNames
-	}
-
-	def getColumnTypes(metric: Metric, prefix: String = ""): Seq[String] = metric match {
+  /** map metric fields to column types */
+  private def getColumnTypes(metric: Metric, prefix: String = ""): Seq[String] = metric match {
 		// Get the qasino column types for any metric type
-		case _: Gauge[_] => Seq(
-      "string"  // value
+    case gauge: Gauge[_] => Seq(
+      "text"  // value
     )
 		case _: Counter => Seq(
-      "int"  // count
+      "integer"  // count
     )
 		case _: Histogram => Seq(
-      "int", // count
-      "int", // max
-      "int", // mean
-      "int", // min
-      "int", // stddev
-      "int", // p50
-      "int", // p75
-      "int", // p95
-      "int", // p98
-      "int", // p99
-      "int"  // p999
+      "integer", // count
+      "integer", // max
+      "real", // mean
+      "integer", // min
+      "real", // stddev
+      "real", // p50
+      "real", // p75
+      "real", // p95
+      "real", // p98
+      "real", // p99
+      "real"  // p999
     )
 		case _: Meter => Seq(
-      "int", // count
-      "int", // mean_rate
-      "int", // m1_rate
-      "int", // m5_rate
-      "int", // m15_rate
-      "string" // rate_unit
+      "integer", // count
+      "real", // mean_rate
+      "real", // m1_rate
+      "real", // m5_rate
+      "real", // m15_rate
+      "text" // rate_unit
     )
 		case _: Timer => Seq(
-      "int", // count
-      "int", // max
-      "int", // mean
-      "int", // min
-      "int", // stddev
-      "int", // 50p
-      "int", // 75p
-      "int", // 95p
-      "int", // 98p
-      "int", // 99p
-      "int", // 999p
-      "int", // mean_rate
-      "int", // m1_rate
-      "int", // m5_rate
-      "int", // m15_rate
-      "string", // rate_unit
-      "string"  // duration_unit
+      "integer", // count
+      "real", // max
+      "real", // mean
+      "real", // min
+      "real", // stddev
+      "real", // 50p
+      "real", // 75p
+      "real", // 95p
+      "real", // 98p
+      "real", // 99p
+      "real", // 999p
+      "real", // mean_rate
+      "real", // m1_rate
+      "real", // m5_rate
+      "real", // m15_rate
+      "text", // rate_unit
+      "text"  // duration_unit
     )
 		case _ => Seq.empty[String]
 	}
 
-	def getGroupedColumnTypes(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
-		var groupColumnTypes = defaultColumnsTypes
-		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
-		for ((_, metric) <- metricMap) {
-			val thisMetricColumnTypes = getColumnTypes(metric)
-			groupColumnTypes = groupColumnTypes ++ thisMetricColumnTypes
-		}
-		groupColumnTypes
-	}
-
-	def getColumnValues(metric: Metric) = metric match {
+  /** map metric fields to column values */
+  private def getColumnValues(metric: Metric):Seq[Any] = metric match {
 		// Get the qasino column values for any metric type
-		case gauge: Gauge[_] => Array(
+		case gauge: Gauge[_] => Seq(
       gauge.getValue.toString
     )
-		case counter: Counter => Array(
+		case counter: Counter => Seq(
       counter.getCount
     )
 		case histogram: Histogram =>
 			val snap = histogram.getSnapshot
-			Array(
+      Seq(
         histogram.getCount,
         convertDuration(snap.getMax),
         convertDuration(snap.getMean),
@@ -431,7 +418,7 @@ class QasinoReporter(builder: Builder) extends
         convertDuration(snap.get999thPercentile)
       )
 		case meter: Meter =>
-			Array(
+      Seq(
         meter.getCount,
         convertRate(meter.getMeanRate),
         convertRate(meter.getOneMinuteRate),
@@ -441,7 +428,7 @@ class QasinoReporter(builder: Builder) extends
       )
 		case timer: Timer =>
       val snap = timer.getSnapshot
-			Array(
+      Seq(
         convertDuration(timer.getCount),
         convertDuration(snap.getMax),
         convertDuration(snap.getMean),
@@ -462,50 +449,64 @@ class QasinoReporter(builder: Builder) extends
       )
 	}
 
-	def getGroupedColumnValues(groupedMetrics: TwoDMap[String, String, Metric], prefix: String):
-	Array[Any] = {
-		var groupColumnValues = defaultColumnsValues
-		val metricMap = groupedMetrics.getOrElse(prefix, Map.empty[String, Metric])
-		for ((_, metric) <- metricMap) {
-			val thisMetricColumnValues = getColumnValues(metric)
-			groupColumnValues = groupColumnValues ++ thisMetricColumnValues
-		}
-		groupColumnValues
-	}
+  /** map metric fields to grouped column types */
+  private def getGroupedColumnNames(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
+    groupedMetrics.getOrElse(prefix, Map.empty[String, Metric]) flatMap {
+      case (suffix, metric) =>
+        getColumnNames(metric, suffix + "_")
+    }
+  }.toSeq
 
-	def getJsonForMetric(metric: Metric, name: String): String = {
+  /** map metric fields to grouped column types */
+  private def getGroupedColumnTypes(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
+    groupedMetrics.getOrElse(prefix, Map.empty[String, Metric]) flatMap { case (_, metric) =>
+      getColumnTypes(metric)
+    }
+  }.toSeq
+
+  /** map metric fields to grouped column values */
+  private def getGroupedColumnValues(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[Any] = {
+    groupedMetrics.getOrElse(prefix, Map.empty[String, Metric]) flatMap { case (_, metric) =>
+      getColumnValues(metric)
+    }
+  }.toSeq
+
+  /** convert metric to JSON */
+  private def getJsonForMetric(metric: Metric, name: String): String = {
 		// Get the qasino json data for any metric type
 		var postDataMap = defaultDataJson
-		val col_names = seqAsJavaList(getColumnNames(metric))
-		val col_types = seqAsJavaList(getColumnTypes(metric))
-		val r = java.util.Arrays.asList(seqAsJavaList(getColumnValues(metric)))
+		val col_names  = "host" +: getColumnNames(metric)
+		val col_types  = "string" +: getColumnTypes(metric)
+		val col_values = reporterHost +: getColumnValues(metric)
 		val tableMap = mutable.Map[String, Any](
 			s"$key_tablename" -> name,
-      s"$key_column_names" -> col_names,
-      s"$key_column_types" -> col_types,
-      s"$key_rows" -> r
+      s"$key_column_names" -> seqAsJavaList(col_names),
+      s"$key_column_types" -> seqAsJavaList(col_types),
+      s"$key_rows" -> java.util.Arrays.asList(seqAsJavaList(col_values))
 		)
 		postDataMap = postDataMap + (s"$key_table" -> mapAsJavaMap(tableMap))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
-	def getGroupedJson(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): String = {
+  /** convert grouped metrics to JSON */
+  private def getJsonForGroupedMetrics(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): String = {
 		// Get the qasino json data for any grouped metric type
 		var postDataMap = defaultDataJson
-		val col_names = seqAsJavaList(getGroupedColumnNames(groupedMetrics, prefix))
-		val col_types =  seqAsJavaList(getGroupedColumnTypes(groupedMetrics, prefix))
-		val r = java.util.Arrays.asList(seqAsJavaList(getGroupedColumnValues(groupedMetrics, prefix)))
+		val col_names = "host" +: getGroupedColumnNames(groupedMetrics, prefix)
+		val col_types =  "string" +: getGroupedColumnTypes(groupedMetrics, prefix)
+		val col_values = reporterHost +: getGroupedColumnValues(groupedMetrics, prefix)
 		val tableMap = mutable.Map[String, Any](
       s"$key_tablename" -> prefix,
-      s"$key_column_names" -> col_names,
-      s"$key_column_types" -> col_types,
-      s"$key_rows" -> r
+      s"$key_column_names" -> seqAsJavaList(col_names),
+      s"$key_column_types" -> seqAsJavaList(col_types),
+      s"$key_rows" -> java.util.Arrays.asList(seqAsJavaList(col_values))
 		)
 		postDataMap = postDataMap + (s"$key_table" -> mapAsJavaMap(tableMap))
 		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
 	}
 
-	def groupMetrics(metrics: Map[String, Metric]): TwoDMap[String, String, Metric] = {
+  /** group metrics by the prefix map */
+	private def groupMetrics(metrics: Map[String, Metric]): TwoDMap[String, String, Metric] = {
 		var groupedMetrics: TwoDMap[String, String, Metric] = ListMap.empty
 		val emptryString = ""
 		for ((name, metric) <- metrics) {
@@ -524,7 +525,8 @@ class QasinoReporter(builder: Builder) extends
 		groupedMetrics
 	}
 
-	def getJsonForMetrics(nameToMetric: ListMap[String, Metric]): Seq[String] = {
+  /** get JSON for a metric or group */
+	private[metrics] def getJson(nameToMetric: ListMap[String, Metric]): Seq[String] = {
 		var jsonForMetrics = Seq.empty[String]
 		val groupedMetrics = groupMetrics(mapAsScalaMap(nameToMetric))
 		for ((prefix, metricMap) <- groupedMetrics) {
@@ -536,20 +538,23 @@ class QasinoReporter(builder: Builder) extends
 			}
 			else {
 				// This metric is part of a group, all of whom should be reported together
-				jsonForMetrics = jsonForMetrics :+ getGroupedJson(groupedMetrics, prefix)
+				jsonForMetrics = jsonForMetrics :+ getJsonForGroupedMetrics(groupedMetrics, prefix)
 			}
 		}
 		jsonForMetrics
 	}
 
-	def reportToQasino(nameToMetric: ListMap[String, Metric]): Unit = {
-    var futures: List[Future[String]] = List.empty[Future[String]]
-    for (jsonStr <- getJsonForMetrics(nameToMetric)) {
-      val postWithParams = dispatchRequest << jsonStr
-      val f = dispatch.Http(postWithParams OK as.String)
-      futures = f +: futures
-    }
+  /** send latest metrics to Qasino */
+  private def reportToQasino(nameToMetric: ListMap[String, Metric]): Unit = {
+    // send a request for each table update
+    val futures =
+      getJson(nameToMetric) map { json =>
+        log.info("JSON:" + json)
+        val postWithParams = dispatchRequest << json
+        dispatch.Http(postWithParams OK as.String)
+      }
 
+    // block until all updates have responded
     try {
       try {
         Await.result(Future.sequence(futures), scala.concurrent.duration.Duration.Inf) // Block until all futures are resolved})
@@ -566,7 +571,8 @@ class QasinoReporter(builder: Builder) extends
     }
 	}
 
-	def combineMetricsToMap(
+  /** Create a map of all metrics */
+	private[metrics] def combineMetricsToMap(
 		 gauges: JavaSortedMap[String, Gauge[_]] = registry.getGauges,
 		 counters: JavaSortedMap[String, Counter] = registry.getCounters,
 		 histograms: JavaSortedMap[String, Histogram] = registry.getHistograms,
@@ -579,6 +585,7 @@ class QasinoReporter(builder: Builder) extends
 		ListMap(timers.toSeq: _*)
 	}
 
+  /** report on metrics */
   override def report (
       gauges: JavaSortedMap[String, Gauge[_]],
       counters: JavaSortedMap[String, Counter],
@@ -595,15 +602,7 @@ class QasinoReporter(builder: Builder) extends
     }
   }
 
-  private[metrics] def reportThrowExceptions():Unit = {
-    reportThrowExceptions(
-      registry.getGauges(filter),
-      registry.getCounters(filter),
-      registry.getHistograms(filter),
-      registry.getMeters(filter),
-      registry.getTimers(filter))
-  }
-
+  /** report implementation that throws exceptions */
   private[metrics] def reportThrowExceptions (
 			gauges: JavaSortedMap[String, Gauge[_]],
 			counters: JavaSortedMap[String, Counter],
@@ -622,6 +621,17 @@ class QasinoReporter(builder: Builder) extends
     ))
 	}
 
+  /** report implementation that throws exceptions */
+  private[metrics] def reportThrowExceptions():Unit = {
+    reportThrowExceptions(
+      registry.getGauges(filter),
+      registry.getCounters(filter),
+      registry.getHistograms(filter),
+      registry.getMeters(filter),
+      registry.getTimers(filter))
+  }
+
+  /** stop scheduled reporting */
   def shutdown(): Unit = {
     stop() // Stop the timer
     report() // Flush out the remaining data
