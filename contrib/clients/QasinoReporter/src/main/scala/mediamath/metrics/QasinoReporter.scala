@@ -475,7 +475,7 @@ class QasinoReporter(builder: Builder) extends
 		// Get the qasino json data for any metric type
 		var postDataMap = defaultDataJson
 		val col_names  = "host" +: getColumnNames(metric)
-		val col_types  = "string" +: getColumnTypes(metric)
+		val col_types  = "text" +: getColumnTypes(metric)
 		val col_values = reporterHost +: getColumnValues(metric)
 		val tableMap = mutable.Map[String, Any](
 			s"$key_tablename" -> name,
@@ -492,7 +492,7 @@ class QasinoReporter(builder: Builder) extends
 		// Get the qasino json data for any grouped metric type
 		var postDataMap = defaultDataJson
 		val col_names = "host" +: getGroupedColumnNames(groupedMetrics, prefix)
-		val col_types =  "string" +: getGroupedColumnTypes(groupedMetrics, prefix)
+		val col_types =  "text" +: getGroupedColumnTypes(groupedMetrics, prefix)
 		val col_values = reporterHost +: getGroupedColumnValues(groupedMetrics, prefix)
 		val tableMap = mutable.Map[String, Any](
       s"$key_tablename" -> prefix,
