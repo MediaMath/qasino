@@ -548,7 +548,6 @@ class QasinoReporter(builder: Builder) extends
     // send a request for each table update
     val futures =
       getJson(nameToMetric) map { json =>
-        log.info("JSON:" + json)
         val postWithParams = dispatchRequest << json
         dispatch.Http(postWithParams OK as.String)
       }
