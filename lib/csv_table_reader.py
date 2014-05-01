@@ -76,7 +76,7 @@ class CsvTableReader(object):
                                     table.set_property('keycols', m.group(2))
 
                     except Exception as inst:
-                        raise Exception("Unable to parse options: %s" % (lineno, inst))
+                        raise Exception("Unable to parse options: %s" % (lineno + 1, inst))
 
                 elif types_lineno != None and types_lineno == lineno:
 
@@ -87,7 +87,7 @@ class CsvTableReader(object):
                         raise Exception("Unsupported type in type list '%s' or parse error" % inst)
     
                     if column_names != None and len(column_names) != len(column_types):
-                        raise Exception("Number of type names does not match number of column names! (line %d)" % lineno)
+                        raise Exception("Number of type names does not match number of column names! (line %d)" % lineno + 1)
 
                     table.set_column_types(column_types)
 
@@ -96,7 +96,7 @@ class CsvTableReader(object):
                     column_names = csv.reader( [ line ] ).next()
                 
                     if column_types != None and len(column_names) != len(column_types):
-                        raise Exception("Number of column names does not match number of column types! (line %d)" % lineno)
+                        raise Exception("Number of column names does not match number of column types! (line %d)" % lineno + 1)
     
                     table.set_column_names(column_names)
 
@@ -120,20 +120,23 @@ class CsvTableReader(object):
                         try:
                             column_type = column_types[column_index]
                         except:
-                            raise Exception("Could not find type for column %d on line %d!" % (column_index, lineno))
+                            raise Exception("Could not find type for column %d on line %d!" % (column_index, lineno + 1))
 
                         try:
-                            if column_type == 'INTEGER':
+                            # Accept "null" fields as is (regardless of if they are an int/real etc)
+                            if column_cell is None or column_cell == '':
+                                output_row.append(column_cell)
+                            elif column_type == 'INTEGER':
                                 output_row.append(int(column_cell))
                             elif column_type == 'REAL':
                                 output_row.append(float(column_cell))
                             else:
                                 output_row.append(column_cell)
                         except:
-                            raise Exception("Parse error on line %d" % lineno)
+                            raise Exception("Parse error on line %d" % lineno + 1)
     
                     if table.add_row(output_row) == -1:
-                        raise Exception("Wrong number of rows on line %d: '%s'" % (lineno, line))
+                        raise Exception("Wrong number of rows on line %d: '%s'" % (lineno + 1, line))
     
                 # END if .. else .. 
 
@@ -141,7 +144,7 @@ class CsvTableReader(object):
 
         except Exception as inst:
             #raise Exception("Csv read error on line %d" % lineno)
-            logging.error('Csv read error on line %d: %s', lineno, inst)
+            logging.error('Csv read error on line %d: %s', lineno + 1, inst)
             return (None, str(inst))
 
         table.set_column_names(column_names)
