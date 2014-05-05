@@ -248,7 +248,7 @@ class QasinoReporter(builder: Builder) extends
 	)
 
   private[metrics] val getGaugeSpec: PartialFunction[Metric, Seq[(String, String, Any)]] = {
-    case gauge:Gauge[_] => Seq(("value", "text", gauge.getValue))
+    case gauge:Gauge[_] => Seq(("value", "text", gauge.getValue.toString))
     case _ => Seq.empty
   }
 
