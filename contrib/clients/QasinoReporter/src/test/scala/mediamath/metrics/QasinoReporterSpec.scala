@@ -28,40 +28,13 @@ class QasinoReporterSpec extends FlatSpec with Matchers {
       .withPersist()
   }
 
-	// name sanitization checks
+	// name sanitation checks
 	val sep = QasinoReporter.registryNameSeparator
 	"A sanitized registry name" should "replace non-alphanumeric characters with underscores" in {
 		QasinoReporter.sanitizeString("testing.abc") should be ("testing" + sep + "abc")
 	}
 	it should "change all uppercase characters to lowercase" in {
 		QasinoReporter.sanitizeString("tEsT") should be ("test")
-	}
-
-	"The builder" should "throw an IllegalArgumentException if two metrics are built with names that are the same after sanitation" in {
-		val counter1 = new Counter
-		val counter1name = "testing_abc"
-		val counter2 = new Counter
-		val counter2name = "testing.abc"
-		val metrics = new MetricRegistry
-		metrics.register(MetricRegistry.name(counter1name), counter1)
-		metrics.register(MetricRegistry.name(counter2name), counter2)
-    val reporter = QasinoReporter.forRegistry(metrics).build()
-
-    an [IllegalArgumentException] should be thrownBy {
-      reporter.sanitizeRegistry(metrics)
-		}
-	}
-
-	it should "throw an IllegalArgumentException if a suffix (column name) begins with a non-alpha character" in {
-		val counter1 = new Counter
-		val counter1name = "testing_123"
-		val metrics = new MetricRegistry
-		metrics.register(MetricRegistry.name(counter1name), counter1)
-    val reporter = QasinoReporter.forRegistry(metrics).withGroupings(Set("testing")).build()
-
-    an [IllegalArgumentException] should be thrownBy {
-      reporter.sanitizeRegistry(metrics)
-		}
 	}
 
 	{
@@ -101,8 +74,8 @@ class QasinoReporterSpec extends FlatSpec with Matchers {
 			metrics.register("testing_meter", new Meter())
 			metrics.register("testing_timer", new Timer())
 			val groupPrefix = "testing"
-			val reporter = QasinoReporter.forRegistry(metrics).withGroupings(Set(groupPrefix)).build()
-			val jsonStrSeq = reporter.getJson(reporter.combineMetricsToMap())
+			val reporter = QasinoReporter.forRegistry(metrics).withGroupings(Set(groupPrefix)).withVerbosity(1).build()
+			val jsonStrSeq = reporter.getJson(reporter.combineMetricsToMap()).toSeq
 			val dataMap = mapper.readValue(jsonStrSeq(0), classOf[Map[String, Any]])
 			val tableDataMap = dataMap.getOrElse("table", {}).asInstanceOf[Map[String, Any]]
 
@@ -116,66 +89,66 @@ class QasinoReporterSpec extends FlatSpec with Matchers {
 
 			val correctColumnNames = List(
         "host",
-        "gauge_value",
         "abc_count",
         "def_count",
+        "gauge_value",
         "meter_count",
         "meter_mean_rate",
+        "meter_rate_unit",
         "meter_m1_rate",
         "meter_m5_rate",
         "meter_m15_rate",
-        "meter_rate_unit",
         "timer_count",
-        "timer_max",
-        "timer_mean",
-        "timer_min",
-        "timer_stddev",
-        "timer_p50",
-        "timer_p75",
-        "timer_p95",
-        "timer_p98",
-        "timer_p99",
-        "timer_p999",
+        "timer_min_time",
+        "timer_max_time",
+        "timer_mean_time",
+        "timer_time_unit",
+        "timer_stddev_time",
+        "timer_p50_time",
+        "timer_p75_time",
+        "timer_p95_time",
+        "timer_p98_time",
+        "timer_p99_time",
+        "timer_p999_time",
         "timer_mean_rate",
+        "timer_rate_unit",
         "timer_m1_rate",
         "timer_m5_rate",
-        "timer_m15_rate",
-        "timer_rate_unit",
-        "timer_duration_unit"
+        "timer_m15_rate"
       )
 
 			"The column_names" should "be " + correctColumnNames in {
-				tableDataMap("column_names") should be (correctColumnNames)
+				tableDataMap("column_names") should equal (correctColumnNames)
 			}
 
       val correctColumnTypes = List(
-        "text", // host
-        "text", // gauge_value
-        "integer", // abc_count
-        "integer", // def_count
-        "integer", // meter_count
-        "real", // meter_mean_rate
-        "real", // meter_m1_rate
-        "real", // meter_m5_rate
-        "real", // meter_m15_rate
-        "text", // meter_rate_unit
-        "integer", // timer_count
-        "real", // timer_max
-        "real", // timer_mean
-        "real", // timer_min
-        "real", // timer_stddev
-        "real", // timer_p50
-        "real", // timer_p75
-        "real", // timer_p95
-        "real", // timer_p98
-        "real", // timer_p99
-        "real", // timer_p999
-        "real", // timer_mean_rate
-        "real", // timer_m1_rate
-        "real", // timer_m5_rate
-        "real", // timer_m15_rate
-        "text", // timer_rate_unit
-        "text"  // timer_duration_unit
+        "text",
+        "integer",
+        "integer",
+        "text",
+        "integer",
+        "real",
+        "text",
+        "real",
+        "real",
+        "real",
+        "integer",
+        "real",
+        "real",
+        "real",
+        "text",
+        "real",
+        "real",
+        "real",
+        "real",
+        "real",
+        "real",
+        "real",
+        "real",
+        "text",
+        "real",
+        "real",
+        "real"
       )
 			"The column_types" should "be " + correctColumnTypes in {
 				tableDataMap("column_types") should be (correctColumnTypes)

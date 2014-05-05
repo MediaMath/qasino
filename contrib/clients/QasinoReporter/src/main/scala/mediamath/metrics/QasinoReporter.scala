@@ -4,9 +4,8 @@ import com.codahale.metrics._
 import com.fasterxml.jackson.databind.ObjectMapper
 import dispatch._
 import java.util.concurrent.{Executors, TimeUnit}
-import scala.collection
 import java.net.{Inet4Address, NetworkInterface}
-import collection._
+import scala.collection._
 import java.util.{SortedMap => JavaSortedMap}
 import scala.language.existentials
 import scala.collection.immutable.ListMap
@@ -32,11 +31,17 @@ object QasinoReporter {
   val QASINO_OP_DEFAULT = "add_table_data"
 
 	val registryNameSeparator = "_"
-	val illegalCharRegex = new scala.util.matching.Regex("""[^A-Za-z0-9_]""")
 
   /** Remove any instances of the illegal characters from the name */
-  def sanitizeString(name: String): String =
-		illegalCharRegex.replaceAllIn(name.toLowerCase, registryNameSeparator)
+  def sanitizeString(name: String): String = {
+    val sanitary = """[^a-z0-9_]""".r.replaceAllIn(name.toLowerCase, registryNameSeparator)
+
+    // if it starts with a number then prefix with _
+    """[0-9]""".r.findPrefixOf(sanitary) match {
+      case Some(_) => "_" + sanitary
+      case None => sanitary
+    }
+  }
 
   /** Get a non-loopback ip address for host (if possible) */
 	def getFirstNonLoopbackAddress: String = {
@@ -68,11 +73,12 @@ object QasinoReporter {
     private[metrics] var path: String = QASINO_PATH_DEFAULT
     private[metrics] var op: String = QASINO_OP_DEFAULT
     private[metrics] var persist: Boolean = false
-    private[metrics] var groupings: Set[String] = SortedSet.empty
+    private[metrics] var groupings: Set[String] = Set.empty
     private[metrics] var filter: MetricFilter = MetricFilter.ALL
     private[metrics] var numThreads: Int = DEFAULT_NUM_THREADS
     private[metrics] var rateUnit: TimeUnit = TimeUnit.SECONDS
     private[metrics] var durationUnit: TimeUnit = TimeUnit.MILLISECONDS
+    private[metrics] var verbosity: Int = 0
 
     def withPort(port: Int): this.type = {
       this.port = port
@@ -115,7 +121,7 @@ object QasinoReporter {
     }
 
     def withGroupings(groupings: Set[String]): this.type = {
-      this.groupings = groupings.map {sanitizeString}
+      this.groupings ++= groupings
       this
     }
 
@@ -136,6 +142,11 @@ object QasinoReporter {
 
     def convertDurationsTo(durationUnit: TimeUnit): this.type = {
       this.durationUnit = durationUnit
+      this
+    }
+
+    def withVerbosity(verbosity:Int): this.type = {
+      this.verbosity = verbosity
       this
     }
 
@@ -176,16 +187,17 @@ class QasinoReporter(builder: Builder) extends
 	val path: String = builder.path
 	val op: String = builder.op
 	val persist: Boolean = builder.persist
-	val groupings: Set[String] = builder.groupings
+	val orderedGroupings: Seq[String] = builder.groupings.toSeq.map(sanitizeString).sortWith(_.length >= _.length)
 	val filter: MetricFilter = builder.filter
 	val rateUnit: TimeUnit = builder.rateUnit
 	val durationUnit: TimeUnit = builder.durationUnit
   val numThreads: Int = builder.numThreads
+  val verbosity:Int = builder.verbosity
 
   // Set up logger
   private val log = LoggerFactory.getLogger(this.getClass)
 
-  // used for identifing self to qasino
+  // used for identifying self to qasino
   private val reporterHost = getFirstNonLoopbackAddress
 
   // Create the execution context for dispatch to run in
@@ -235,319 +247,148 @@ class QasinoReporter(builder: Builder) extends
 		)
 	)
 
-  // create a copy of the registry with names as valid qasino columns
-  private[metrics] def sanitizeRegistry(registry: MetricRegistry): MetricRegistry = {
-    // Return a new MetricRegistry with names sanitized for qasino
-    val sanitizedRegistry = new MetricRegistry
-    val metricMap = mapAsScalaMap(registry.getMetrics)
-    for ((name, metric) <- metricMap) {
-      sanitizedRegistry.register(sanitizeString(name), metric)
-    }
-
-    if (registryHasCollisions(sanitizedRegistry))
-      throw new IllegalArgumentException("Found a collision within registry names after sanitation")
-
-    if (hasIllegalColumnNames(sanitizedRegistry))
-      throw new IllegalArgumentException("Found a column beginning with a non-alpha character")
-
-    sanitizedRegistry
+  private[metrics] val getGaugeSpec: PartialFunction[Metric, Seq[(String, String, Any)]] = {
+    case gauge:Gauge[_] => Seq(("value", "text", gauge.getValue))
+    case _ => Seq.empty
   }
 
-  // check for namespace collisions caused by sanitization
-  private[metrics] def registryHasCollisions(registry: MetricRegistry): Boolean = {
-    // Check whether we have any name collisions after some sanitizing
-    val namesSet = mutable.Set[String]()
-    val registryNames = registry.getNames
-    for (name <- asScalaSet(registryNames)) {
-      val sanitizedName = sanitizeString(name)
-      namesSet.add(sanitizedName)
-    }
-    namesSet.size < registryNames.size()
+  private[metrics] val getCountingSpec: PartialFunction[Metric, Seq[(String, String, Any)]] = {
+    case counter:Counting => Seq(("count", "integer", counter.getCount))
+    case _ => Seq.empty
   }
 
-  // Check whether illegal column names would be generated by the current registry
-  private[metrics] def hasIllegalColumnNames(registry: MetricRegistry): Boolean = {
-    var hasIllegalColName = false
-    for (name <- registry.getNames if !hasIllegalColName) {
-      val thisGrouping: Option[String] =
-        groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
-      val suffix: String = if (thisGrouping.isDefined) {
-        name.drop(thisGrouping.get.length + 1)
+  private[metrics] val getSamplingSpec: PartialFunction[Metric, Seq[(String, String, Any)]] = {
+    case sampler:Sampling =>
+      val snapshot = sampler.getSnapshot
+
+      Seq(
+        ("min_time", "real", convertDuration(snapshot.getMin)),
+        ("max_time", "real", convertDuration(snapshot.getMax)),
+        ("mean_time", "real", convertDuration(snapshot.getMean)),
+        ("time_unit", "text", durationUnit.toString)
+      ) ++ {
+        if (verbosity >= 1)
+          Seq(
+            ("stddev_time", "real", convertDuration(snapshot.getStdDev)),
+            ("p50_time", "real", convertDuration(snapshot.getMedian)),
+            ("p75_time", "real", convertDuration(snapshot.get75thPercentile)),
+            ("p95_time", "real", convertDuration(snapshot.get95thPercentile)),
+            ("p98_time", "real", convertDuration(snapshot.get98thPercentile)),
+            ("p99_time", "real", convertDuration(snapshot.get99thPercentile)),
+            ("p999_time", "real", convertDuration(snapshot.get999thPercentile))
+          )
+        else
+          Seq.empty
       }
-      else name
-      hasIllegalColName = suffix.matches("^[^A-Za-z].*")
-    }
-    hasIllegalColName
+    case _ => Seq.empty
   }
 
-	// Shorthand for a two dimensional map of any type
-	private type TwoDMap[K1, K2, Val] = ListMap[K1, ListMap[K2, Val]]
-
-  /** map metric fields to column names */
-  private def getColumnNames(metric: Metric, prefixWithSeparator: String = ""): Seq[String] = metric match {
-		// Get the qasino column names for any metric type
-		case gauge: Gauge[_] =>
-			Seq(
-        "value"
-      ) map {prefixWithSeparator + _}
-		case _: Counter =>
-			Seq(
-        "count"
-      ) map {prefixWithSeparator + _}
-		case _: Histogram =>
-			Seq(
-        "count",
-        "max",
-        "mean",
-        "mid",
-        "stddev",
-        "p50",
-        "p75",
-        "p95",
-        "p98",
-        "p99",
-        "p999"
-      ) map {prefixWithSeparator + _}
-		case _: Meter =>
-			Seq(
-        "count",
-        "mean_rate",
-        "m1_rate",
-        "m5_rate",
-        "m15_rate",
-        "rate_unit"
-      ) map {prefixWithSeparator + _}
-		case _: Timer =>
-			Seq(
-        "count",
-        "max",
-        "mean",
-        "min",
-        "stddev",
-        "p50",
-        "p75",
-        "p95",
-        "p98",
-        "p99",
-        "p999",
-        "mean_rate",
-        "m1_rate",
-        "m5_rate",
-        "m15_rate",
-        "rate_unit",
-        "duration_unit"
-      ) map {prefixWithSeparator + _}
-		case _ => Seq.empty[String]
-	}
-
-  /** map metric fields to column types */
-  private def getColumnTypes(metric: Metric, prefix: String = ""): Seq[String] = metric match {
-		// Get the qasino column types for any metric type
-    case gauge: Gauge[_] => Seq(
-      "text"  // value
-    )
-		case _: Counter => Seq(
-      "integer"  // count
-    )
-		case _: Histogram => Seq(
-      "integer", // count
-      "integer", // max
-      "real", // mean
-      "integer", // min
-      "real", // stddev
-      "real", // p50
-      "real", // p75
-      "real", // p95
-      "real", // p98
-      "real", // p99
-      "real"  // p999
-    )
-		case _: Meter => Seq(
-      "integer", // count
-      "real", // mean_rate
-      "real", // m1_rate
-      "real", // m5_rate
-      "real", // m15_rate
-      "text" // rate_unit
-    )
-		case _: Timer => Seq(
-      "integer", // count
-      "real", // max
-      "real", // mean
-      "real", // min
-      "real", // stddev
-      "real", // 50p
-      "real", // 75p
-      "real", // 95p
-      "real", // 98p
-      "real", // 99p
-      "real", // 999p
-      "real", // mean_rate
-      "real", // m1_rate
-      "real", // m5_rate
-      "real", // m15_rate
-      "text", // rate_unit
-      "text"  // duration_unit
-    )
-		case _ => Seq.empty[String]
-	}
-
-  /** map metric fields to column values */
-  private def getColumnValues(metric: Metric):Seq[Any] = metric match {
-		// Get the qasino column values for any metric type
-		case gauge: Gauge[_] => Seq(
-      gauge.getValue.toString
-    )
-		case counter: Counter => Seq(
-      counter.getCount
-    )
-		case histogram: Histogram =>
-			val snap = histogram.getSnapshot
+  private[metrics]  val getMeteredSpec: PartialFunction[Metric, Seq[(String, String, Any)]] = {
+    case meter:Metered =>
       Seq(
-        histogram.getCount,
-        convertDuration(snap.getMax),
-        convertDuration(snap.getMean),
-        convertDuration(snap.getMin),
-        convertDuration(snap.getStdDev),
-        convertDuration(snap.getMedian),
-        convertDuration(snap.get75thPercentile),
-        convertDuration(snap.get95thPercentile),
-        convertDuration(snap.get98thPercentile),
-        convertDuration(snap.get99thPercentile),
-        convertDuration(snap.get999thPercentile)
-      )
-		case meter: Meter =>
-      Seq(
-        meter.getCount,
-        convertRate(meter.getMeanRate),
-        convertRate(meter.getOneMinuteRate),
-        convertRate(meter.getFiveMinuteRate),
-        convertRate(meter.getFifteenMinuteRate),
-        rateUnit
-      )
-		case timer: Timer =>
-      val snap = timer.getSnapshot
-      Seq(
-        convertDuration(timer.getCount),
-        convertDuration(snap.getMax),
-        convertDuration(snap.getMean),
-        convertDuration(snap.getMin),
-        convertDuration(snap.getStdDev),
-        convertDuration(snap.getMedian),
-        convertDuration(snap.get75thPercentile),
-        convertDuration(snap.get95thPercentile),
-        convertDuration(snap.get98thPercentile),
-        convertDuration(snap.get99thPercentile),
-        convertDuration(snap.get999thPercentile),
-        convertRate(timer.getMeanRate),
-        convertRate(timer.getOneMinuteRate),
-        convertRate(timer.getFiveMinuteRate),
-        convertRate(timer.getFifteenMinuteRate),
-        rateUnit,
-        durationUnit
-      )
-	}
+        ("mean_rate", "real", convertRate(meter.getMeanRate)),
+        ("rate_unit", "text", rateUnit.toString)
+      ) ++ {
+        if (verbosity >= 1)
+          Seq(
+            ("m1_rate", "real", convertRate(meter.getOneMinuteRate)),
+            ("m5_rate", "real", convertRate(meter.getFiveMinuteRate)),
+            ("m15_rate", "real", convertRate(meter.getFifteenMinuteRate))
+          )
+        else
+          Seq.empty
+      }
+    case _ => Seq.empty
+  }
 
-  /** map metric fields to grouped column types */
-  private def getGroupedColumnNames(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
-    groupedMetrics.getOrElse(prefix, Map.empty[String, Metric]) flatMap {
-      case (suffix, metric) =>
-        getColumnNames(metric, suffix + "_")
-    }
-  }.toSeq
+  private[metrics]  def getSpec(metric:Metric, prefixOption:Option[String] = None): (Seq[String], Seq[String], Seq[Any]) = {
+    val spec =
+      getGaugeSpec(metric) ++
+      getCountingSpec(metric) ++
+      getSamplingSpec(metric) ++
+      getMeteredSpec(metric)
 
-  /** map metric fields to grouped column types */
-  private def getGroupedColumnTypes(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[String] = {
-    groupedMetrics.getOrElse(prefix, Map.empty[String, Metric]) flatMap { case (_, metric) =>
-      getColumnTypes(metric)
-    }
-  }.toSeq
+    (prefixOption match {
+      case Some(prefix) => spec map { case (n, t, v) => (prefix + registryNameSeparator + n, t, v) }
+      case None => spec
+    }).unzip3
+  }
 
-  /** map metric fields to grouped column values */
-  private def getGroupedColumnValues(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): Seq[Any] = {
-    groupedMetrics.getOrElse(prefix, Map.empty[String, Metric]) flatMap { case (_, metric) =>
-      getColumnValues(metric)
-    }
-  }.toSeq
+  private[metrics] def createJson(tableName:String, names:Seq[String], types:Seq[String], values:Seq[Any]): String = {
+    val tableMap = mutable.Map[String, Any](
+      s"$key_tablename" -> tableName,
+      s"$key_column_names" -> seqAsJavaList("host" +: names),
+      s"$key_column_types" -> seqAsJavaList("text" +: types),
+      s"$key_rows" -> java.util.Arrays.asList(seqAsJavaList(reporterHost +: values))
+    )
 
-  /** convert metric to JSON */
-  private def getJsonForMetric(metric: Metric, name: String): String = {
-		// Get the qasino json data for any metric type
-		var postDataMap = defaultDataJson
-		val col_names  = "host" +: getColumnNames(metric)
-		val col_types  = "text" +: getColumnTypes(metric)
-		val col_values = reporterHost +: getColumnValues(metric)
-		val tableMap = mutable.Map[String, Any](
-			s"$key_tablename" -> name,
-      s"$key_column_names" -> seqAsJavaList(col_names),
-      s"$key_column_types" -> seqAsJavaList(col_types),
-      s"$key_rows" -> java.util.Arrays.asList(seqAsJavaList(col_values))
-		)
-		postDataMap = postDataMap + (s"$key_table" -> mapAsJavaMap(tableMap))
-		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
-	}
-
-  /** convert grouped metrics to JSON */
-  private def getJsonForGroupedMetrics(groupedMetrics: TwoDMap[String, String, Metric], prefix: String): String = {
-		// Get the qasino json data for any grouped metric type
-		var postDataMap = defaultDataJson
-		val col_names = "host" +: getGroupedColumnNames(groupedMetrics, prefix)
-		val col_types =  "text" +: getGroupedColumnTypes(groupedMetrics, prefix)
-		val col_values = reporterHost +: getGroupedColumnValues(groupedMetrics, prefix)
-		val tableMap = mutable.Map[String, Any](
-      s"$key_tablename" -> prefix,
-      s"$key_column_names" -> seqAsJavaList(col_names),
-      s"$key_column_types" -> seqAsJavaList(col_types),
-      s"$key_rows" -> java.util.Arrays.asList(seqAsJavaList(col_values))
-		)
-		postDataMap = postDataMap + (s"$key_table" -> mapAsJavaMap(tableMap))
-		mapper.writeValueAsString(mapAsJavaMap(postDataMap))
-	}
-
-  /** group metrics by the prefix map */
-	private def groupMetrics(metrics: Map[String, Metric]): TwoDMap[String, String, Metric] = {
-		var groupedMetrics: TwoDMap[String, String, Metric] = ListMap.empty
-		val emptryString = ""
-		for ((name, metric) <- metrics) {
-			// Match groups going by longest group name to shortest
-			val thisGrouping: Option[String] =
-				groupings.toSeq.sortBy(_.length).reverse.find(s => name.startsWith(s + "_"))
-			val suffix: String = if (thisGrouping.isDefined) {
-				// Add one to the length for the separator
-				name.drop(thisGrouping.get.length + 1)
-			}
-			else name
-			var subgroupedMetrics: ListMap[String, Metric] = groupedMetrics.getOrElse(thisGrouping.getOrElse(emptryString), ListMap.empty)
-			subgroupedMetrics = subgroupedMetrics + (suffix -> metric)
-			groupedMetrics = groupedMetrics + (thisGrouping.getOrElse(emptryString) -> subgroupedMetrics)
-		}
-		groupedMetrics
-	}
+    mapper.writeValueAsString(mapAsJavaMap(defaultDataJson + (s"$key_table" -> mapAsJavaMap(tableMap))))
+  }
 
   /** get JSON for a metric or group */
-	private[metrics] def getJson(nameToMetric: ListMap[String, Metric]): Seq[String] = {
-		var jsonForMetrics = Seq.empty[String]
-		val groupedMetrics = groupMetrics(mapAsScalaMap(nameToMetric))
-		for ((prefix, metricMap) <- groupedMetrics) {
-			if (prefix.isEmpty) {
-				// No prefix, process this metric by itself
-				for ((name, metric) <- metricMap) {
-					jsonForMetrics = jsonForMetrics :+ getJsonForMetric(metric, name)
-				}
-			}
-			else {
-				// This metric is part of a group, all of whom should be reported together
-				jsonForMetrics = jsonForMetrics :+ getJsonForGroupedMetrics(groupedMetrics, prefix)
-			}
-		}
-		jsonForMetrics
-	}
+	private[metrics] def getJson(nameToMetric: ListMap[String, Metric]) = {
+    var groups: Map[Option[String], Map[Option[String], Metric]] = Map.empty
+
+    for ( (unsanitaryName, metric) <- nameToMetric ) {
+      val metricName = sanitizeString(unsanitaryName)
+      val groupName = orderedGroupings.find( group => metricName == group || metricName.startsWith(group + registryNameSeparator) )
+
+      val subGroupName = groupName match {
+        case Some(group) =>
+          if ( metricName == group )
+            None
+          else
+            Some(sanitizeString(metricName.drop(group.length + 1)))
+        case None =>
+          Some(sanitizeString(metricName))
+      }
+
+      groups += (groupName -> (groups.getOrElse(groupName, Map.empty[Option[String], Metric]) + (subGroupName -> metric)))
+    }
+
+    var jsonSeq = Seq.empty[String]
+
+    for {
+      groupName <- groups.keys.toSeq.sorted
+      metricMap = groups(groupName)
+    } {
+      groupName match {
+        case Some(tableName) =>
+          var combinedNames = Seq.empty[String]
+          var combinedTypes = Seq.empty[String]
+          var combinedValues = Seq.empty[Any]
+
+          for {
+            prefix <- metricMap.keys.toSeq.sorted
+            (names, types, values) = getSpec(metricMap(prefix), prefix)
+          } yield {
+            combinedNames ++= names
+            combinedTypes ++= types
+            combinedValues ++= values
+          }
+
+          jsonSeq :+= createJson(tableName, combinedNames, combinedTypes, combinedValues)
+        case None =>
+          for {
+            (tableName, metric) <- metricMap
+            (names, types, values) = getSpec(metric, None)
+          } {
+            jsonSeq :+= createJson(tableName.get, names, types, values)
+          }
+      }
+    }
+
+    jsonSeq
+  }
 
   /** send latest metrics to Qasino */
   private def reportToQasino(nameToMetric: ListMap[String, Metric]): Unit = {
     // send a request for each table update
     val futures =
       getJson(nameToMetric) map { json =>
+        if ( log.isDebugEnabled )
+          log.debug(s"Qasino request JSON: $json")
+
         val postWithParams = dispatchRequest << json
         dispatch.Http(postWithParams OK as.String)
       }
@@ -608,14 +449,12 @@ class QasinoReporter(builder: Builder) extends
 			meters: JavaSortedMap[String, Meter],
 			timers: JavaSortedMap[String, Timer]) {
 
-    val sanitizedRegistry = sanitizeRegistry(registry)
-
     reportToQasino(combineMetricsToMap(
-      sanitizedRegistry.getGauges,
-      sanitizedRegistry.getCounters,
-      sanitizedRegistry.getHistograms,
-      sanitizedRegistry.getMeters,
-      sanitizedRegistry.getTimers
+      gauges,
+      counters,
+      histograms,
+      meters,
+      timers
     ))
 	}
 
