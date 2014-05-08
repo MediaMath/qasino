@@ -258,8 +258,8 @@ class QasinoReporter(builder: Builder) extends
   }
 
   private[metrics] val getSamplingSpec: PartialFunction[Metric, Seq[(String, String, Any)]] = {
-    case sampler:Sampling =>
-      val snapshot = sampler.getSnapshot
+    case timer:Timer =>
+      val snapshot = timer.getSnapshot
 
       Seq(
         ("min_time", "real", convertDuration(snapshot.getMin)),
@@ -276,6 +276,27 @@ class QasinoReporter(builder: Builder) extends
             ("p98_time", "real", convertDuration(snapshot.get98thPercentile)),
             ("p99_time", "real", convertDuration(snapshot.get99thPercentile)),
             ("p999_time", "real", convertDuration(snapshot.get999thPercentile))
+          )
+        else
+          Seq.empty
+      }
+    case sampler:Sampling =>
+      val snapshot = sampler.getSnapshot
+
+      Seq(
+        ("min", "real", snapshot.getMin),
+        ("max", "real", snapshot.getMax),
+        ("mean", "real", snapshot.getMean)
+      ) ++ {
+        if (verbosity >= 1)
+          Seq(
+            ("stddev", "real", snapshot.getStdDev),
+            ("p50", "real", snapshot.getMedian),
+            ("p75", "real", snapshot.get75thPercentile),
+            ("p95", "real", snapshot.get95thPercentile),
+            ("p98", "real", snapshot.get98thPercentile),
+            ("p99", "real", snapshot.get99thPercentile),
+            ("p999", "real", snapshot.get999thPercentile)
           )
         else
           Seq.empty
