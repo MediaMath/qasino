@@ -284,8 +284,8 @@ class QasinoReporter(builder: Builder) extends
       val snapshot = sampler.getSnapshot
 
       Seq(
-        ("min", "real", snapshot.getMin),
-        ("max", "real", snapshot.getMax),
+        ("min", "integer", snapshot.getMin),
+        ("max", "integer", snapshot.getMax),
         ("mean", "real", snapshot.getMean)
       ) ++ {
         if (verbosity >= 1)
