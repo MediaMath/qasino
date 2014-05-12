@@ -5,7 +5,6 @@ import os
 import logging
 from pprint import pprint
 from optparse import OptionParser
-import simplejson
 import re
 import random
 import time
@@ -25,11 +24,140 @@ for path in [
 from txzmq import ZmqFactory
 
 from csv_table_reader import CsvTableReader
-import json_requestor
-import json_subscriber
 import constants
 from util import Identity
 import qasino_table
+
+
+def main():
+
+    global options
+
+    logging.basicConfig(format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S",
+                        level=logging.INFO)
+
+    parser = OptionParser()
+
+    parser.add_option("-I", "--identity", dest="identity",
+                      help="Use IDENTITY as identity", metavar="IDENTITY")
+
+    parser.add_option("-H", "--hostname", dest="hostname", default='localhost',
+                      help="Send table to HOSTNAME qasino server", metavar="HOSTNAME")
+
+    parser.add_option("-p", "--port", dest="port", default=constants.JSON_RPC_PORT,
+                      help="Use PORT for qasino server", metavar="PORT")
+
+    parser.add_option("-u", "--username", dest="username", 
+                      help="HTTPS auth username")
+
+    parser.add_option("-w", "--password", dest="password", 
+                      help="HTTPS auth password")
+
+    parser.add_option("-P", "--pubsub-port", dest="pubsub_port", default=constants.JSON_PUBSUB_PORT,
+                      help="Use PORT for qasino pubsub connection", metavar="PORT")
+
+    parser.add_option("-i", "--index", dest="indexes",
+                      action="append",
+                      help="Path to a index file to process" )
+
+    parser.add_option("-f", "--index-list", dest="index_list",
+                      help="Path to a file with a list of index files to process in it" )
+
+    parser.add_option("-T", "--table", dest="tables",
+                      action="append",
+                      help="Tables to limit publishing to" )
+
+    parser.add_option("-t", "--table-list", dest="table_list",
+                      help="Path to a file with a list of tables to limit publishing to" )
+
+    parser.add_option("-d", "--send-delay-max", dest="send_delay_max", default=15,
+                      help="Max delay to add when its time to send tables." )
+
+    parser.add_option("-x", "--interval", dest="interval", default=None,
+                      help="Interval to send updates (This will turn off subscribing)." )
+
+    parser.add_option("-s", "--use-https", dest="use_https", default=False, action="store_true",
+                      help="Use HTTP over SSL/TLS protocol to publish table.")
+
+    parser.add_option("-k", "--skip-ssl-verify", dest="skip_ssl_verify", default=False, action="store_true",
+                      help="Don't verify SSL certificates.")
+
+    (options, args) = parser.parse_args()
+
+    logging.info("Qasino csv publisher starting")
+
+    if options.identity != None:
+        Identity.set_identity(options.identity)
+
+    logging.info("Identity is %s", Identity.get_identity())
+
+    if options.hostname == None:
+        logging.info("Please specify a hostname to connect to.")
+        exit(1)
+
+    zmq_factory = ZmqFactory()
+
+    # Create a request object (either ZMQ or HTTPS).
+
+    if options.use_https:
+        import http_requestor
+
+        # Change the default port if we're https
+        if options.port == constants.JSON_RPC_PORT:
+            options.port = constants.HTTPS_PORT
+
+        logging.info("Connecting to {}:{} with HTTPS to send tables.".format(options.hostname, options.port))
+
+        # Disable extraneous logging in requests.
+        requests_log = logging.getLogger("requests")
+        requests_log.setLevel(logging.WARNING)
+
+        requestor = http_requestor.HttpRequestor(options.hostname, options.port, 
+                                                 username = options.username,
+                                                 password = options.password, 
+                                                 skip_ssl_verify = options.skip_ssl_verify )
+    else:  # Use json requestor which is zmq
+        import json_requestor
+
+        logging.info("Connecting to {}:{} with ZeroMQ to send tables.".format(options.hostname, options.port))
+
+        requestor = json_requestor.JsonRequestor(options.hostname, options.port, zmq_factory)
+
+    # Determine the update trigger (interval or signal).
+
+    if options.interval is None or options.interval < 10:
+
+        logging.info("Connecting to {}:{} on pubsub ZeroMQ channel to listen for generation signals.".format(options.hostname, options.pubsub_port))
+
+        # Create a zeromq pub sub subscriber.
+
+        import json_subscriber
+
+        json_subscriber = json_subscriber.JsonSubscriber(options.hostname, options.pubsub_port, zmq_factory)
+
+        # Read and send the table when a generation signal comes in.
+
+        json_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
+
+    else:
+        # Read and send the table at a fixed interval.
+
+        logging.info("Sending data on fixed interval ({} seconds).".format(options.interval))
+
+        request_metadata_task = task.LoopingCall(read_and_send_tables, requestor, options)
+        request_metadata_task.start(options.interval)
+
+
+    # Read and send immediately, uncomment.
+
+#    read_and_send_tables(requestor, options)
+
+    # Run the event loop
+
+    reactor.run()
+
+    logging.info("Qasino csv publisher exiting")
+
 
 
 def get_csv_files_from_index(index_file):
@@ -146,16 +274,17 @@ def get_table_list_file_tables(table_list_file):
 
     return result_tables
 
-def initiate_read_and_send_tables(json_requestor, options):
+
+def initiate_read_and_send_tables(requestor, options):
     """ 
     Calls read_and_send_tables after a random delay to reduce "storming" the server.
     """
     delay = random.randint(0, int(options.send_delay_max))
     logging.info("Waiting %d seconds to send data.", delay)
-    reactor.callLater(delay, read_and_send_tables, json_requestor, options)
+    reactor.callLater(delay, read_and_send_tables, requestor, options)
 
 
-def read_and_send_tables(json_requestor, options):
+def read_and_send_tables(requestor, options):
     """
     Given the specified indexes, read the csv files and publish them
     to a qasino server.
@@ -291,9 +420,12 @@ def read_and_send_tables(json_requestor, options):
             if table.get_property('update'): properties.append(' update')
             if table.get_property('persist'): properties.append(' persist')
 
-            logging.info("Sending%s table '%s' to '%s:%d' (%d rows).", ''.join(properties), tablename, options.hostname, options.port, table_info[tablename]["nr_rows"])
+            logging.info("Sending{} table '{}' to '{}:{}' ({} rows).".format( ''.join(properties), tablename, options.hostname, options.port, table_info[tablename]["nr_rows"] ) )
 
-            json_requestor.send_table(table)
+            error = requestor.send_table(table)
+
+            if error is not None:
+                logging.info("Error sending table '{}': {}".format(tablename, error))
         
         # END for each csv file
 
@@ -301,14 +433,14 @@ def read_and_send_tables(json_requestor, options):
 
     # Publish an info table
 
-    publish_info_table(json_requestor, nr_tables, nr_errors)
+    publish_info_table(requestor, nr_tables, nr_errors)
 
     # Publish a table list table.
 
-    publish_tables_table(json_requestor, table_info)
+    publish_tables_table(requestor, table_info)
 
 
-def publish_info_table(json_requestor, nr_tables, nr_errors):
+def publish_info_table(requestor, nr_tables, nr_errors):
 
     tablename = "qasino_csvpublisher_info"
 
@@ -321,9 +453,9 @@ def publish_info_table(json_requestor, nr_tables, nr_errors):
 
     logging.info("Sending table '%s' to '%s:%d' (1 rows).", tablename, options.hostname, options.port)
 
-    json_requestor.send_table(table)
+    requestor.send_table(table)
 
-def publish_tables_table(json_requestor, table_info):
+def publish_tables_table(requestor, table_info):
 
     this_tablename = "qasino_csvpublisher_tables"
 
@@ -349,90 +481,10 @@ def publish_tables_table(json_requestor, table_info):
         
     logging.info("Sending table '%s' to '%s:%d' (%d rows).", this_tablename, options.hostname, options.port, table.get_nr_rows())
 
-    json_requestor.send_table(table)
+    requestor.send_table(table)
 
 
 
 if __name__ == '__main__':
 
-    logging.basicConfig(format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S",
-                        level=logging.INFO)
-
-    parser = OptionParser()
-
-    parser.add_option("-I", "--identity", dest="identity",
-                      help="Use IDENTITY as identity", metavar="IDENTITY")
-
-    parser.add_option("-H", "--hostname", dest="hostname", default='localhost',
-                      help="Send table to HOSTNAME qasino server", metavar="HOSTNAME")
-
-    parser.add_option("-p", "--port", dest="port", default=constants.JSON_RPC_PORT,
-                      help="Use PORT for qasino server", metavar="PORT")
-
-    parser.add_option("-P", "--pubsub-port", dest="pubsub_port", default=constants.JSON_PUBSUB_PORT,
-                      help="Use PORT for qasino pubsub connection", metavar="PORT")
-
-    parser.add_option("-i", "--index", dest="indexes",
-                      action="append",
-                      help="Path to a index file to process" )
-
-    parser.add_option("-f", "--index-list", dest="index_list",
-                      help="Path to a file with a list of index files to process in it" )
-
-    parser.add_option("-T", "--table", dest="tables",
-                      action="append",
-                      help="Tables to limit publishing to" )
-
-    parser.add_option("-t", "--table-list", dest="table_list",
-                      help="Path to a file with a list of tables to limit publishing to" )
-
-    parser.add_option("-s", "--send-delay-max", dest="send_delay_max", default=15,
-                      help="Max delay to add when its time to send tables." )
-
-
-    (options, args) = parser.parse_args()
-
-    logging.info("Qasino csv publisher starting")
-
-    if options.identity != None:
-        Identity.set_identity(options.identity)
-
-    logging.info("Identity is %s", Identity.get_identity())
-
-    if options.hostname == None:
-        logging.info("Please specify a hostname to connect to.")
-        exit(1)
-
-    zmq_factory = ZmqFactory()
-
-    # Create a json request object.
-
-    logging.info("Connecting to %s:%d to send tables.", options.hostname, options.port)
-
-    json_requestor = json_requestor.JsonRequestor(options.hostname, options.port, zmq_factory)
-
-    # Create a json subscriber object.
-
-    logging.info("Connecting to %s:%d to listen for generation signals.", options.hostname, options.pubsub_port)
-
-    json_subscriber = json_subscriber.JsonSubscriber(options.hostname, options.pubsub_port, zmq_factory)
-
-
-    # Read and send the table when a generation signal comes in.
-
-    json_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, json_requestor, options)
-
-    # Read and send the table at a fixed interval.
-
-#    request_metadata_task = task.LoopingCall(read_and_send_table, json_requestor, options)
-#    request_metadata_task.start(options.interval)
-
-    # Read and send immediately, uncomment.
-
-#    read_and_send_tables(json_requestor, options)
-
-    # Run the event loop
-
-    reactor.run()
-
-    logging.info("Qasino csv publisher exiting")
+    exit( main() )

@@ -49,8 +49,6 @@ You'll need to have the following python libraries installed:
 
 - python-twisted
 - python-zmq
-- python-simplejson
-- python-httplib2
 - python-apsw
 - python-yaml
 - python-requests

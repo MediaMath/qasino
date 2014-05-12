@@ -178,7 +178,7 @@ class HttpReceiver(Resource):
         ## Table list op
 
         if request.args['op'][0] == "get_table_list":
-            logging.info("HttpReceiver: Got request for table list.")
+            #logging.info("HttpReceiver: Got request for table list.")
             response_meta = { "response_op" : "tables_list", "identity" : util.Identity.get_identity() }
             response_data = self.data_manager.get_table_list()
             return json.dumps(response_meta) + json.dumps(response_data)
@@ -187,7 +187,7 @@ class HttpReceiver(Resource):
 
         if request.args['op'][0] == "add_table_data":
 
-            logging.info("HttpReceiver: Add table data (JSON).")
+            #logging.info("HttpReceiver: Add table data (JSON).")
             table = qasino_table.QasinoTable()
             table.from_obj(obj)
             response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }

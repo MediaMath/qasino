@@ -23,7 +23,7 @@ class JsonReceiver(ZmqREPConnection):
         try:
             obj = json.loads(messageParts[0])
         except Exception as e:
-            logging.error("JsonReceiver: Error, failed to parse json message.")
+            logging.info("JsonReceiver: ERROR failed to get/parse content of POST: %s", str(e))
             response_meta = { "response_op" : "error", "error_message" : "Failed to parse JSON message: %s" % str(e), "identity" : Identity.get_identity() }
             self.reply(messageId, json.dumps(response_meta))
             return
