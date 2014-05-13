@@ -21,12 +21,12 @@ for path in [
 from txzmq import ZmqFactory
 
 import data_manager
-import json_requestor
+import zmq_requestor
 from util import Identity
 import constants
 import qasino_table
 
-def send_dummy_table(json_requestor, schema_version):
+def send_dummy_table(zmq_requestor, schema_version):
 
     table = qasino_table.QasinoTable(options.tablename)
 
@@ -55,7 +55,7 @@ def send_dummy_table(json_requestor, schema_version):
     if options.static:
         table.set_property("static", 1)
 
-    json_requestor.send_table(table)
+    zmq_requestor.send_table(table)
 
 
 if __name__ == "__main__":
@@ -89,17 +89,17 @@ if __name__ == "__main__":
                         level=logging.INFO)
 
 
-    logging.info("Sending dummy table on port %d", constants.JSON_RPC_PORT)
+    logging.info("Sending dummy table on port %d", constants.ZMQ_RPC_PORT)
 
     zmq_factory = ZmqFactory()
 
-    # Create a json requestor object.
+    # Create a zeromq requestor object.
 
-    json_requestor = json_requestor.JsonRequestor(options.hostname, constants.JSON_RPC_PORT, zmq_factory)
+    zmq_requestor = zmq_requestor.ZmqRequestor(options.hostname, constants.ZMQ_RPC_PORT, zmq_factory)
 
     # Send the table at fixed intervals
 
-    task = task.LoopingCall(send_dummy_table, json_requestor, options.schema_version)
+    task = task.LoopingCall(send_dummy_table, zmq_requestor, options.schema_version)
     task.start(10.0)
 
     # Run the event loop

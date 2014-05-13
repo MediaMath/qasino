@@ -7,7 +7,7 @@ import json
 
 from util import Identity
 
-class JsonRequestor(ZmqREQConnection):
+class ZmqRequestor(ZmqREQConnection):
 
     def __init__(self, remote_host, port, zmq_factory, data_manager=None):
 
@@ -21,7 +21,7 @@ class JsonRequestor(ZmqREQConnection):
 
     def request_metadata(self):
         msg = { "op" : "get_table_list", "identity" : Identity.get_identity() }
-        #logging.info("JsonRequestor: Requesting table list from %s.", self.remote_host)
+        #logging.info("ZmqRequestor: Requesting table list from %s.", self.remote_host)
         deferred = self.sendMsg(json.dumps(msg))
         deferred.callback = self.message_received
 
@@ -34,10 +34,10 @@ class JsonRequestor(ZmqREQConnection):
         response_meta = json.loads(msg[0])
 
         if response_meta == None or response_meta["response_op"] == None:
-            logging.error("JsonRequestor: bad message response received")
+            logging.error("ZmqRequestor: bad message response received")
         elif response_meta["response_op"] == "tables_list":
-            logging.info("JsonRequestor: Table list response: %s", json.loads(msg[1]))
+            logging.info("ZmqRequestor: Table list response: %s", json.loads(msg[1]))
         elif response_meta["response_op"] == "ok":
-            logging.info("JsonRequestor: request OK")
+            logging.info("ZmqRequestor: request OK")
         else:
-            logging.error("JsonRequestor: unknown response: ", response_meta)
+            logging.error("ZmqRequestor: unknown response: ", response_meta)

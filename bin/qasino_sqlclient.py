@@ -21,7 +21,7 @@ for path in [
         sys.path.append(path)
         break
 
-import json_requestor
+import zmq_requestor
 import constants
 import util
 
@@ -256,7 +256,7 @@ if __name__ == "__main__":
 
     if options.use_zmq and options.port == constants.HTTPS_PORT:
         # switch to the right default port for zmq
-        options.port = constants.JSON_RPC_PORT
+        options.port = constants.ZMQ_RPC_PORT
     
     print "Connecting to %s %s:%d." % ('https' if options.use_https else 'zmq', 
                                        options.hostname, options.port)
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     if options.use_zmq:
         # switch to the right default port
         if options.port == constants.HTTPS_PORT:
-            options.port = constants.JSON_RPC_PORT
+            options.port = constants.ZMQ_RPC_PORT
 
         conn = QasinoZMQConnection(options)
         conn.connect()

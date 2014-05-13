@@ -44,7 +44,7 @@ def main():
     parser.add_option("-H", "--hostname", dest="hostname", default='localhost',
                       help="Send table to HOSTNAME qasino server", metavar="HOSTNAME")
 
-    parser.add_option("-p", "--port", dest="port", default=constants.JSON_RPC_PORT,
+    parser.add_option("-p", "--port", dest="port", default=constants.ZMQ_RPC_PORT,
                       help="Use PORT for qasino server", metavar="PORT")
 
     parser.add_option("-u", "--username", dest="username", 
@@ -53,7 +53,7 @@ def main():
     parser.add_option("-w", "--password", dest="password", 
                       help="HTTPS auth password")
 
-    parser.add_option("-P", "--pubsub-port", dest="pubsub_port", default=constants.JSON_PUBSUB_PORT,
+    parser.add_option("-P", "--pubsub-port", dest="pubsub_port", default=constants.ZMQ_PUBSUB_PORT,
                       help="Use PORT for qasino pubsub connection", metavar="PORT")
 
     parser.add_option("-i", "--index", dest="indexes",
@@ -82,6 +82,9 @@ def main():
     parser.add_option("-k", "--skip-ssl-verify", dest="skip_ssl_verify", default=False, action="store_true",
                       help="Don't verify SSL certificates.")
 
+    parser.add_option("-g", "--gen-signal-timeout", dest="gen_signal_timeout", default=120,
+                      help="Timeout after which we restart the generation signal subscription.")
+
     (options, args) = parser.parse_args()
 
     logging.info("Qasino csv publisher starting")
@@ -103,7 +106,7 @@ def main():
         import http_requestor
 
         # Change the default port if we're https
-        if options.port == constants.JSON_RPC_PORT:
+        if options.port == constants.ZMQ_RPC_PORT:
             options.port = constants.HTTPS_PORT
 
         logging.info("Connecting to {}:{} with HTTPS to send tables.".format(options.hostname, options.port))
@@ -116,12 +119,12 @@ def main():
                                                  username = options.username,
                                                  password = options.password, 
                                                  skip_ssl_verify = options.skip_ssl_verify )
-    else:  # Use json requestor which is zmq
-        import json_requestor
+    else:  # Use zmq requestor
+        import zmq_requestor
 
         logging.info("Connecting to {}:{} with ZeroMQ to send tables.".format(options.hostname, options.port))
 
-        requestor = json_requestor.JsonRequestor(options.hostname, options.port, zmq_factory)
+        requestor = zmq_requestor.ZmqRequestor(options.hostname, options.port, zmq_factory)
 
     # Determine the update trigger (interval or signal).
 
@@ -131,13 +134,21 @@ def main():
 
         # Create a zeromq pub sub subscriber.
 
-        import json_subscriber
+        import zmq_subscriber
 
-        json_subscriber = json_subscriber.JsonSubscriber(options.hostname, options.pubsub_port, zmq_factory)
+        zmq_subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
 
         # Read and send the table when a generation signal comes in.
 
-        json_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
+        global last_gen_signal_time
+
+        last_gen_signal_time = time.time()
+
+        zmq_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
+
+        # Set a timeout so we can restart the subscribe if we haven't heard from the server in a while.
+
+        reactor.callLater(5, check_for_gen_signal_timeout, options, zmq_subscriber, requestor, zmq_factory)
 
     else:
         # Read and send the table at a fixed interval.
@@ -158,6 +169,32 @@ def main():
 
     logging.info("Qasino csv publisher exiting")
 
+
+def check_for_gen_signal_timeout(options, prev_zmq_subscriber, requestor, zmq_factory):
+
+    global last_gen_signal_time
+
+    if time.time() - last_gen_signal_time > options.gen_signal_timeout:
+        logging.warning("Exceeded the generation signal timeout (%ds).  Restarting ZeroMQ subscriber.", options.gen_signal_timeout)
+        
+        import zmq_subscriber
+
+        prev_zmq_subscriber.shutdown()
+
+        zmq_subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
+
+        # Read and send the table when a generation signal comes in.
+
+        zmq_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
+
+        # Reset the timer and last signal time so we don't re-subscribe right away.
+        last_gen_signal_time = time.time()
+        reactor.callLater(5, check_for_gen_signal_timeout, options, zmq_subscriber, requestor, zmq_factory)
+    else:
+
+        # Reset the timer to check again in a bit.
+        reactor.callLater(5, check_for_gen_signal_timeout, options, prev_zmq_subscriber, requestor, zmq_factory)
+        
 
 
 def get_csv_files_from_index(index_file):
@@ -279,6 +316,10 @@ def initiate_read_and_send_tables(requestor, options):
     """ 
     Calls read_and_send_tables after a random delay to reduce "storming" the server.
     """
+    global last_gen_signal_time
+
+    last_gen_signal_time = time.time()
+
     delay = random.randint(0, int(options.send_delay_max))
     logging.info("Waiting %d seconds to send data.", delay)
     reactor.callLater(delay, read_and_send_tables, requestor, options)

@@ -8,7 +8,6 @@ import logging
 from txzmq import ZmqFactory
 
 from datetime import datetime
-import simplejson
 
 from optparse import OptionParser
 
@@ -22,7 +21,7 @@ for path in [
 
 import util
 import constants
-import json_requestor
+import zmq_requestor
 import qasino_table
 
 
@@ -55,7 +54,7 @@ if __name__ == "__main__":
 
 
     zmq_factory = ZmqFactory()
-    json_requestor = json_requestor.JsonRequestor(options.hostname, constants.JSON_RPC_PORT, zmq_factory)
+    zmq_requestor = zmq_requestor.ZmqRequestor(options.hostname, constants.ZMQ_RPC_PORT, zmq_factory)
 
     for x in range(int(options.nr_tables)):
 
@@ -63,7 +62,7 @@ if __name__ == "__main__":
         if options.persist:
             table.set_property("persist", 1)
 
-        logging.info("Sending random table of %d rows on port %d", table.get_nr_rows(), constants.JSON_RPC_PORT)
+        logging.info("Sending random table of %d rows on port %d", table.get_nr_rows(), constants.ZMQ_RPC_PORT)
 
-        json_requestor.send_table(table)
+        zmq_requestor.send_table(table)
 

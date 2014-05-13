@@ -7,7 +7,7 @@ import json
 
 from util import Identity
 
-class JsonSubscriber(ZmqSubConnection):
+class ZmqSubscriber(ZmqSubConnection):
 
     def __init__(self, remote_host, port, zmq_factory, data_manager=None):
 
@@ -19,6 +19,9 @@ class JsonSubscriber(ZmqSubConnection):
 
         ZmqSubConnection.__init__(self, zmq_factory, endpoint)
 
+    def shutdown(self):
+        self.unsubscribe("GENSIG")
+        ZmqSubConnection.shutdown(self)
 
     def subscribe_generation_signal(self, callback, *args):
 

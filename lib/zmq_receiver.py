@@ -8,7 +8,7 @@ import sqlite3
 from util import Identity
 import qasino_table
 
-class JsonReceiver(ZmqREPConnection):
+class ZmqReceiver(ZmqREPConnection):
 
     def __init__(self, port, zmq_factory, data_manager):
         
@@ -23,7 +23,7 @@ class JsonReceiver(ZmqREPConnection):
         try:
             obj = json.loads(messageParts[0])
         except Exception as e:
-            logging.info("JsonReceiver: ERROR failed to get/parse content of POST: %s", str(e))
+            logging.info("ZmqReceiver: ERROR failed to get/parse content of POST: %s", str(e))
             response_meta = { "response_op" : "error", "error_message" : "Failed to parse JSON message: %s" % str(e), "identity" : Identity.get_identity() }
             self.reply(messageId, json.dumps(response_meta))
             return
@@ -31,18 +31,18 @@ class JsonReceiver(ZmqREPConnection):
         response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : "Unspecified error" }
 
         if obj == None or obj["op"] == None:
-            logging.error("JsonReceiver: Error, unrecognized message.")
+            logging.error("ZmqReceiver: Error, unrecognized message.")
             response_meta = { "response_op" : "error", "error_message" : "Unrecognized request", "identity" : Identity.get_identity() }
             self.reply(messageId, json.dumps(response_meta))
 
         elif obj["op"] == "get_table_list":
-            #logging.info("JsonReceiver: Got request for table list.")
+            #logging.info("ZmqReceiver: Got request for table list.")
             response_meta = { "response_op" : "tables_list", "identity" : Identity.get_identity() }
             response_data = self.data_manager.get_table_list()
             self.reply(messageId, json.dumps(response_meta), json.dumps(response_data))
 
         elif obj["op"] == "add_table_data":
-            #logging.info("JsonReceiver: Got request to add data.")
+            #logging.info("ZmqReceiver: Got request to add data.")
             table = qasino_table.QasinoTable()
             table.from_obj(obj)
             if table.get_property("static"):
@@ -53,11 +53,11 @@ class JsonReceiver(ZmqREPConnection):
             self.reply(messageId, json.dumps(response_meta))
 
         elif obj["op"] == "generation_signal":
-            logging.info("JsonReceiver: Got generation signal.")
+            logging.info("ZmqReceiver: Got generation signal.")
             # Currently unused..
             
         elif obj["op"] == "query":
-            #logging.info("JsonReceiver: Got request for table list.")
+            #logging.info("ZmqReceiver: Got request for table list.")
             use_write_db = True if "use_write_db" in obj and obj["use_write_db"] else False
             if "sql" not in obj:
                 response_meta = { "response_op" : "error", "error_message" : "Must specify sql", "identity" : Identity.get_identity() }
@@ -66,7 +66,7 @@ class JsonReceiver(ZmqREPConnection):
                 try:
                     self.process_sql_statement(obj["sql"], messageId, use_write_db=use_write_db)
                 except Exception as e:
-                    logging.error('JsonReceiver: Invalid message received from client: error="%s", msg="%s"', str(e), str(obj))
+                    logging.error('ZmqReceiver: Invalid message received from client: error="%s", msg="%s"', str(e), str(obj))
                     response_meta = { "response_op" : "error", "error_message" : str(e), "identity" : Identity.get_identity() }
                     self.reply(messageId, json.dumps(response_meta))
 
@@ -74,7 +74,7 @@ class JsonReceiver(ZmqREPConnection):
                 return
 
         else:
-            logging.error("JsonReceiver: Error, unrecognized op '%s'", obj["op"])
+            logging.error("ZmqReceiver: Error, unrecognized op '%s'", obj["op"])
             response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : "Unrecognized op '%s'" % obj["op"] }
             self.reply(messageId, json.dumps(response_meta))
 
@@ -86,7 +86,7 @@ class JsonReceiver(ZmqREPConnection):
 
         query_start = time.time()
 
-        logging.info("JsonReceiver: (%d) SQL received: %s", query_id, sql_statement.rstrip())
+        logging.info("ZmqReceiver: (%d) SQL received: %s", query_id, sql_statement.rstrip())
 
         if not sqlite3.complete_statement(sql_statement):
 
@@ -132,13 +132,13 @@ class JsonReceiver(ZmqREPConnection):
         # Or error?
 
         if retval != 0:
-            logging.info("JsonReceiver: (%d) SQL error: %s", query_id, error_message)
+            logging.info("ZmqReceiver: (%d) SQL error: %s", query_id, error_message)
 
             response_meta["response_op"] = "error"
             response_meta["error_message"] = error_message
 
         else:
-            logging.info("JsonReceiver: (%d) SQL completed (%.02f seconds)", query_id, time.time() - query_start)
+            logging.info("ZmqReceiver: (%d) SQL completed (%.02f seconds)", query_id, time.time() - query_start)
 
         # Send the response!
 

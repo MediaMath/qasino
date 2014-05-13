@@ -7,7 +7,7 @@ import json
 
 from util import Identity
 
-class JsonPublisher(ZmqPubConnection):
+class ZmqPublisher(ZmqPubConnection):
 
     def __init__(self, zmq_factory, port, data_manager=None):
 

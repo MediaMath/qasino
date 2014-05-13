@@ -153,7 +153,7 @@ if __name__ == '__main__':
         elif options.use_https:
             options.port = constants.HTTPS_PORT
         elif options.use_zmq:
-            options.port = constants.JSON_RPC_PORT
+            options.port = constants.ZMQ_RPC_PORT
 
     # Read from stdin by default or filename if specified.
     filename = options.filename if options.filename else "/dev/stdin"
@@ -193,16 +193,15 @@ if __name__ == '__main__':
     if options.use_zmq:
 
         from txzmq import ZmqFactory
-        import json_requestor
-        import json_subscriber
+        import zmq_requestor
 
         zmq_factory = ZmqFactory()
 
         # Create a json request object.
 
-        json_requestor = json_requestor.JsonRequestor(options.hostname, options.port, zmq_factory)
+        zmq_requestor = zmq_requestor.ZmqRequestor(options.hostname, options.port, zmq_factory)
 
-        json_requestor.send_table(table)
+        zmq_requestor.send_table(table)
 
 
     elif options.use_http or options.use_https:

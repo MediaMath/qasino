@@ -30,10 +30,10 @@ from txzmq import ZmqFactory
 
 import sql_receiver
 import data_manager
-import json_receiver
-import json_requestor
+import zmq_receiver
+import zmq_requestor
 import http_receiver
-import json_publisher
+import zmq_publisher
 import constants
 from util import Identity
 
@@ -95,16 +95,16 @@ if __name__ == "__main__":
 
     # Create a Pub/sub channel to blast out new generation signals.
 
-    logging.info("Listening for JSON pub/sub clients on port %d.", constants.JSON_PUBSUB_PORT)
+    logging.info("Listening for ZeroMQ pub/sub clients on port %d.", constants.ZMQ_PUBSUB_PORT)
     
-    json_publisher = json_publisher.JsonPublisher(zmq_factory, constants.JSON_PUBSUB_PORT, data_manager)
+    zmq_publisher = zmq_publisher.ZmqPublisher(zmq_factory, constants.ZMQ_PUBSUB_PORT, data_manager)
 
 
     # Create a Data Manager instance that changes the sql backend's
     # pointers for which db is queried and which db is updated.
 
     data_manager = data_manager.DataManager(options.db_file, db_dir=options.db_dir, 
-                                            signal_channel=json_publisher, archive_db_dir=options.archive_db_dir,
+                                            signal_channel=zmq_publisher, archive_db_dir=options.archive_db_dir,
                                             generation_duration_s=options.generation_duration_s)
 
     def reread_views(views_file):
@@ -182,20 +182,20 @@ if __name__ == "__main__":
     except Exception as e:
         logging.info("Failed to listen on SSL port %d, continuing anyway (%s).", constants.HTTPS_PORT, str(e))
 
-    # Create a listener for responding to json requests.
+    # Create a listener for responding to ZeroMQ requests.
 
-    logging.info("Listening for JSON rpc clients on port %d", constants.JSON_RPC_PORT)
+    logging.info("Listening for ZeroMQ rpc clients on port %d", constants.ZMQ_RPC_PORT)
 
-    json_receiver = json_receiver.JsonReceiver(constants.JSON_RPC_PORT, zmq_factory, data_manager)
+    zmq_receiver = zmq_receiver.ZmqReceiver(constants.ZMQ_RPC_PORT, zmq_factory, data_manager)
 
 
     # For testing connect to ourselves...
 
-#    json_requestor = json_requestor.JsonRequestor('127.0.0.1', constants.JSON_RPC_PORT, zmq_factory, data_manager)
+#    zmq_requestor = zmq_requestor.ZmqRequestor('127.0.0.1', constants.ZMQ_RPC_PORT, zmq_factory, data_manager)
 
     # Request metadata at fixed intervals.
 
-#    request_metadata_task = task.LoopingCall(json_requestor.request_metadata)
+#    request_metadata_task = task.LoopingCall(zmq_requestor.request_metadata)
 #    request_metadata_task.start(8.0)
 
 

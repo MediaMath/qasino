@@ -51,7 +51,6 @@ class QasinoTable(object):
         for name, value in extra_settings.iteritems():
             obj[name] = value
 
-        #logging.info("JsonRequestor: Sending table '%s'", table["tablename"])
         obj["table"] = { "tablename" : self.tablename,
                          "column_names" : self.column_names,
                          "column_types" : self.column_types,
