@@ -39,5 +39,7 @@ class ZmqRequestor(ZmqREQConnection):
             logging.info("ZmqRequestor: Table list response: %s", json.loads(msg[1]))
         elif response_meta["response_op"] == "ok":
             logging.info("ZmqRequestor: request OK")
+        elif response_meta["response_op"] == "error":
+            logging.info("ZmqRequestor: request ERROR: " + response_meta["error_message"])
         else:
             logging.error("ZmqRequestor: unknown response: ", response_meta)

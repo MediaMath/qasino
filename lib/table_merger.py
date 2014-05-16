@@ -34,7 +34,7 @@ class TableMerger(object):
 
             for column_name in columns_to_add:
                 column_type = column_type_lookup[column_name]
-                sql = "ALTER TABLE %s ADD COLUMN %s %s DEFAULT NULL;" % (tablename, column_name, column_type)
+                sql = "ALTER TABLE '%s' ADD COLUMN '%s' %s DEFAULT NULL;" % (tablename, column_name, column_type)
 
                 logging.info("TableMerger: Altering table %s to add column %s %s", tablename, column_name, column_type)
                 sql_backend.do_sql(txn, sql)

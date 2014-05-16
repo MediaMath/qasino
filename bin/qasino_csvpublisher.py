@@ -156,7 +156,7 @@ def main():
         logging.info("Sending data on fixed interval ({} seconds).".format(options.interval))
 
         request_metadata_task = task.LoopingCall(read_and_send_tables, requestor, options)
-        request_metadata_task.start(options.interval)
+        request_metadata_task.start(int(options.interval))
 
 
     # Read and send immediately, uncomment.

@@ -43,13 +43,23 @@ class ZmqReceiver(ZmqREPConnection):
 
         elif obj["op"] == "add_table_data":
             #logging.info("ZmqReceiver: Got request to add data.")
+            #print "Got request: ", obj
             table = qasino_table.QasinoTable()
-            table.from_obj(obj)
-            if table.get_property("static"):
-                self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
+            err = table.from_obj(obj)
+            if err is not None:
+                errmsg = "Invalid input format: " + str(err)
+                logging.info("ZmqReceiver: " + errmsg)
+                response_meta = { "response_op" : "error", "identity" : Identity.get_identity(), "error_message" : errmsg }
             else:
-                self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
-            response_meta = { "response_op" : "ok", "identity" : Identity.get_identity() }
+                response_meta = { "response_op" : "ok", "identity" : Identity.get_identity() }
+                try:
+                    if table.get_property("static"):
+                        self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
+                    else:
+                        self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
+                except Exception as e:
+                    response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
+
             self.reply(messageId, json.dumps(response_meta))
 
         elif obj["op"] == "generation_signal":

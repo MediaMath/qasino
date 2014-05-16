@@ -12,6 +12,7 @@ class CsvTableReader(object):
     csv_to_qasino_type_map = { 'str' : 'TEXT',
                                'string' : 'TEXT',
                                'ip' : 'TEXT',
+                               'varchar' : 'TEXT',
                                'float' : 'REAL',
                                'int' : 'INTEGER',
                                'integer' : 'INTEGER',
@@ -82,7 +83,7 @@ class CsvTableReader(object):
 
                     try:
                         parsed = csv.reader( [ line ] ).next()
-                        column_types = [ self.csv_to_qasino_type_map[x] for x in parsed ]
+                        column_types = [ self.csv_to_qasino_type_map[x.strip()] for x in parsed ]
                     except Exception as inst:
                         raise Exception("Unsupported type in type list '%s' or parse error" % inst)
     

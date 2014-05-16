@@ -1,6 +1,7 @@
 
 import json
 import random
+import re
 
 import util
 
@@ -71,6 +72,29 @@ class QasinoTable(object):
             pass
         return []
 
+    def validate(self):
+        valid_column_name_regex = re.compile(r'^[a-zA-Z]+[a-zA-Z0-1_]*$')
+
+        # Verify tablename is valid.
+        if valid_column_name_regex.search(self.tablename) is None:
+            raise Exception("Invalid tablename name '{}'".format(tablename))
+
+        # Verify column names are valid.
+
+        for column_name in self.column_names:
+            if valid_column_name_regex.search(column_name) is None:
+                raise Exception("Invalid column name '{}'".format(column_name))
+
+        # Verify types are valid.
+        valid_types = { x: 1 for x in [ 'text', 'varchar', 'real', 'integer', 'int' ] }
+
+        for column_type in self.column_types:
+            if column_type.lower() not in valid_types:
+                raise Exception("Invalid column type '{}'".format(column_type))
+
+        # We could/should check rows here probably...
+        
+
     def from_obj(self, obj):
         try:
             self.tablename = obj['table']['tablename']
@@ -81,10 +105,14 @@ class QasinoTable(object):
             for key, value in obj.iteritems():
                 if key != "table" and key != "op":
                     self.properties[key] = value
-        except:
-            return -1
 
-        return 1
+            # Do some validation
+            self.validate()
+
+        except Exception as e:
+            return e
+
+        return None
 
     def printit(self):
         print self.get_obj()

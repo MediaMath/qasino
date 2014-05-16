@@ -189,15 +189,20 @@ class HttpReceiver(Resource):
 
             #logging.info("HttpReceiver: Add table data (JSON).")
             table = qasino_table.QasinoTable()
-            table.from_obj(obj)
-            response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
-            try:
-                if table.get_property("static"):
-                    self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
-                else:
-                    self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
-            except Exception as e:
-                response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
+            err = table.from_obj(obj)
+            if err is not None:
+                errmsg = "Invalid input format: " + str(err)
+                logging.info("HttpReceiver: " + errmsg)
+                response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : errmsg }
+            else:
+                response_meta = { "response_op" : "ok", "identity" : util.Identity.get_identity() }
+                try:
+                    if table.get_property("static"):
+                        self.data_manager.sql_backend_writer_static.async_add_table_data(table, table.get_property("identity"))
+                    else:
+                        self.data_manager.sql_backend_writer.async_add_table_data(table, table.get_property("identity"))
+                except Exception as e:
+                    response_meta = { "response_op" : "error", "identity" : util.Identity.get_identity(), "error_message" : str(e) }
             
             return json.dumps(response_meta)
 

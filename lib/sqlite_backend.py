@@ -570,12 +570,12 @@ class SqlConnections(object):
             # the create table would mean having to restart the
             # transaction and require some weird retry logic..
 
-            create_sql = "CREATE TABLE IF NOT EXISTS %s ( \n" % tablename
+            create_sql = "CREATE TABLE IF NOT EXISTS '%s' ( \n" % tablename
 
             columns = []
             
             for column_name, column_type in table.zip_columns():
-                columns.append( "%s %s DEFAULT NULL" % (column_name, column_type) )
+                columns.append( "'%s' %s DEFAULT NULL" % (column_name, column_type) )
 
             create_sql += ",\n".join( columns )
 
@@ -609,7 +609,7 @@ class SqlConnections(object):
             # Otherwise we insert.
 
             if static:
-                txn.execute("DELETE FROM %s;" % tablename)
+                txn.execute("DELETE FROM '%s';" % tablename)
                 rowcount = self.do_insert_table(txn, table)
 
             else:
