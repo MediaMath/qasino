@@ -1,6 +1,6 @@
 
 import logging
-import simplejson as json
+import json
 import re
 import time
 import sqlite3
