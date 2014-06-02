@@ -52,6 +52,7 @@ You'll need to have the following python libraries installed:
 - python-apsw
 - python-yaml
 - python-requests
+- python-txzmq
 
 ##Running
 
