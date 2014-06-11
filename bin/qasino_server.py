@@ -49,7 +49,7 @@ import zmq_requestor
 import http_receiver
 import zmq_publisher
 import constants
-from util import Identity
+import util
 
 def signal_handler(signum, frame):
     sig_names = dict((k, v) for v, k in signal.__dict__.iteritems() if v.startswith('SIG'))
@@ -87,9 +87,9 @@ if __name__ == "__main__":
     logging.info("Qasino server starting")
 
     if options.identity != None:
-        Identity.set_identity(options.identity)
+        util.Identity.set_identity(options.identity)
 
-    logging.info("Identity is %s", Identity.get_identity())
+    logging.info("Identity is %s", util.Identity.get_identity())
 
     if not os.path.exists(options.db_dir):
         logging.info("Making directory: %s", options.db_dir)
@@ -174,7 +174,11 @@ if __name__ == "__main__":
             raise NotImplementedError()
 
     def cmp_pass(uname, password, storedpass):
-        return crypt.crypt(password, storedpass[:2])
+        sizeof_hash = len(storedpass)
+        if sizeof_hash == 13:
+            return crypt.crypt(password, storedpass[:2])
+        else:
+            return util.get_apache_md5(password, storedpass)
 
     checkers = [ FilePasswordDB(options.htpasswd_file, hash=cmp_pass) ]
 
