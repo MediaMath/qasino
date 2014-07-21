@@ -350,19 +350,20 @@ class DataManager(object):
 
         tablename = table.get_tablename()
 
-        if table.get_property('persist'):
-            self.saved_tables[tablename] = { "table" : table, "identity" : identity }
+        key = tablename + identity
 
+        if table.get_property('persist'):
+            self.saved_tables[key] = { "table" : table, "tablename" : tablename, "identity" : identity }
         else:
             # Be sure to remove a table that is no longer persisting.
             if tablename in self.saved_tables:
-                del self.saved_tables[tablename]
+                del self.saved_tables[key]
 
 
     def async_add_saved_tables(self):
 
-        for tablename, table_data in self.saved_tables.iteritems():
+        for key, table_data in self.saved_tables.iteritems():
 
-            logging.info("DataManager: Adding saved table '%s' from '%s'", tablename, table_data["identity"])
+            logging.info("DataManager: Adding saved table '%s' from '%s'", table_data["tablename"], table_data["identity"])
 
             self.sql_backend_writer.async_add_table_data(table_data["table"], table_data["identity"])

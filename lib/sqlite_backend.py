@@ -566,7 +566,7 @@ class SqlConnections(object):
 
         try:
             if not update and not static and self.connections[identity]["tables"][tablename] > 0:
-                logging.info("SqlConnections: '%s' has already sent an update for table '%s'", identity, tablename)
+                logging.info("SqlConnections: '%s' has already sent an update or is persisted for table '%s'", identity, tablename)
                 return
         except KeyError:
             # Ignore
