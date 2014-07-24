@@ -86,7 +86,7 @@ class QasinoTable(object):
         return []
 
     def validate(self):
-        valid_column_name_regex = re.compile(r'^[a-zA-Z]+[a-zA-Z0-1_]*$')
+        valid_column_name_regex = re.compile(r'^[a-zA-Z]+[a-zA-Z0-9_]*$')
 
         # Verify tablename is valid.
         if valid_column_name_regex.search(self.tablename) is None:
