@@ -58,7 +58,7 @@ def main():
     parser.add_option("-H", "--hostname", dest="hostname", default='localhost',
                       help="Send table to HOSTNAME qasino server", metavar="HOSTNAME")
 
-    parser.add_option("-p", "--port", dest="port", default=constants.ZMQ_RPC_PORT,
+    parser.add_option("-p", "--port", dest="port", default=constants.ZMQ_RPC_PORT, type=int,
                       help="Use PORT for qasino server", metavar="PORT")
 
     parser.add_option("-u", "--username", dest="username", 
@@ -67,7 +67,7 @@ def main():
     parser.add_option("-w", "--password", dest="password", 
                       help="HTTPS auth password")
 
-    parser.add_option("-P", "--pubsub-port", dest="pubsub_port", default=constants.ZMQ_PUBSUB_PORT,
+    parser.add_option("-P", "--pubsub-port", dest="pubsub_port", default=constants.ZMQ_PUBSUB_PORT, type=int,
                       help="Use PORT for qasino pubsub connection", metavar="PORT")
 
     parser.add_option("-i", "--index", dest="indexes",
@@ -87,7 +87,7 @@ def main():
     parser.add_option("-d", "--send-delay-max", dest="send_delay_max", default=15,
                       help="Max delay to add when its time to send tables." )
 
-    parser.add_option("-x", "--interval", dest="interval", default=None,
+    parser.add_option("-x", "--interval", dest="interval", default=None, type=int,
                       help="Interval to send updates (This will turn off subscribing)." )
 
     parser.add_option("-s", "--use-https", dest="use_https", default=False, action="store_true",
@@ -96,7 +96,7 @@ def main():
     parser.add_option("-k", "--skip-ssl-verify", dest="skip_ssl_verify", default=False, action="store_true",
                       help="Don't verify SSL certificates.")
 
-    parser.add_option("-g", "--gen-signal-timeout", dest="gen_signal_timeout", default=120,
+    parser.add_option("-g", "--gen-signal-timeout", dest="gen_signal_timeout", default=120, type=int,
                       help="Timeout after which we restart the generation signal subscription.")
 
     (options, args) = parser.parse_args()
@@ -150,7 +150,7 @@ def main():
 
         import zmq_subscriber
 
-        zmq_subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
+        subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
 
         # Read and send the table when a generation signal comes in.
 
@@ -158,11 +158,11 @@ def main():
 
         last_gen_signal_time = time.time()
 
-        zmq_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
+        subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
 
         # Set a timeout so we can restart the subscribe if we haven't heard from the server in a while.
 
-        reactor.callLater(5, check_for_gen_signal_timeout, options, zmq_subscriber, requestor, zmq_factory)
+        reactor.callLater(5, check_for_gen_signal_timeout, options, subscriber, requestor, zmq_factory)
 
     else:
         # Read and send the table at a fixed interval.
@@ -184,7 +184,7 @@ def main():
     logging.info("Qasino csv publisher exiting")
 
 
-def check_for_gen_signal_timeout(options, prev_zmq_subscriber, requestor, zmq_factory):
+def check_for_gen_signal_timeout(options, prev_subscriber, requestor, zmq_factory):
 
     global last_gen_signal_time
 
@@ -193,21 +193,21 @@ def check_for_gen_signal_timeout(options, prev_zmq_subscriber, requestor, zmq_fa
         
         import zmq_subscriber
 
-        prev_zmq_subscriber.shutdown()
+        prev_subscriber.shutdown()
 
-        zmq_subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
+        subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
 
         # Read and send the table when a generation signal comes in.
 
-        zmq_subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
+        subscriber.subscribe_generation_signal(initiate_read_and_send_tables, requestor, options)
 
         # Reset the timer and last signal time so we don't re-subscribe right away.
         last_gen_signal_time = time.time()
-        reactor.callLater(5, check_for_gen_signal_timeout, options, zmq_subscriber, requestor, zmq_factory)
+        reactor.callLater(5, check_for_gen_signal_timeout, options, subscriber, requestor, zmq_factory)
     else:
 
         # Reset the timer to check again in a bit.
-        reactor.callLater(5, check_for_gen_signal_timeout, options, prev_zmq_subscriber, requestor, zmq_factory)
+        reactor.callLater(5, check_for_gen_signal_timeout, options, prev_subscriber, requestor, zmq_factory)
         
 
 
