@@ -146,8 +146,8 @@ class CsvTableReader(object):
                                 output_row.append(float(column_cell))
                             else:
                                 output_row.append(column_cell)
-                        except:
-                            raise Exception("Parse error on line %d" % lineno + 1)
+                        except Exception as e:
+                            raise Exception("Parse error on line %d: %s" % (lineno + 1, str(e) ))
     
                     if table.add_row(output_row) == -1:
                         raise Exception("Wrong number of rows on line %d: '%s'" % (lineno + 1, line))
