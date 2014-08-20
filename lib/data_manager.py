@@ -356,7 +356,7 @@ class DataManager(object):
             self.saved_tables[key] = { "table" : table, "tablename" : tablename, "identity" : identity }
         else:
             # Be sure to remove a table that is no longer persisting.
-            if tablename in self.saved_tables:
+            if key in self.saved_tables:
                 del self.saved_tables[key]
 
 
