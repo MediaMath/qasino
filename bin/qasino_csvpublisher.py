@@ -338,6 +338,12 @@ def initiate_read_and_send_tables(requestor, options):
     logging.info("Waiting %d seconds to send data.", delay)
     reactor.callLater(delay, read_and_send_tables, requestor, options)
 
+def get_mtime(filepath):
+    try:
+        return os.path.getmtime(filepath)
+    except:
+        return 0
+
 
 def read_and_send_tables(requestor, options):
     """
@@ -402,7 +408,7 @@ def read_and_send_tables(requestor, options):
 
         csv_files = get_csv_files_from_index(index_file)
 
-        if csv_files == None or len(csv_files) <= 0:
+        if csv_files is None or len(csv_files) <= 0:
 
             logging.info("Warning: no csv files found in index '%s'", index_file)
             continue
@@ -438,6 +444,7 @@ def read_and_send_tables(requestor, options):
             table_info[tablename]["nr_errors"] = 0
             table_info[tablename]["error_msg"] = ''
             table_info[tablename]["read_epoch"] = time.time()
+            table_info[tablename]["mtime"] = get_mtime(filepath)
 
             try:
                 filehandle = open(filepath, 'r')
@@ -517,8 +524,9 @@ def publish_tables_table(requestor, table_info):
     table = qasino_table.QasinoTable(this_tablename)
     table.add_column("identity", "varchar")
     table.add_column("tablename", "varchar")
-    table.add_column("read_epoch", "int")
+    table.add_column("read_epoch", "real")
     table.add_column("read_time_s", "int")
+    table.add_column("mtime", "int")
     table.add_column("nr_errors", "int")
     table.add_column("error_msg", "int")
     table.add_column("nr_rows", "int")
@@ -529,6 +537,7 @@ def publish_tables_table(requestor, table_info):
                          tablename,
                          table_stats["read_epoch"], 
                          table_stats["read_time_s"], 
+                         table_stats["mtime"], 
                          table_stats["nr_errors"],
                          table_stats["error_msg"],
                          table_stats["nr_rows"],
