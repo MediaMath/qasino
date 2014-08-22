@@ -44,6 +44,8 @@ class HttpReceiver(Resource):
 
     def render_GET(self, request):
 
+        request.setHeader("Content-Type", "application/json")
+
         #pprint(request.__dict__)
 
         if 'op' not in request.args:
@@ -80,6 +82,7 @@ class HttpReceiver(Resource):
                 table.add_row( [ identity, value ] )
                 table.set_property('update', 1)
                 table.set_property('persist', 1)
+                table.set_property('keycols', 'identity')
 
                 self.data_manager.sql_backend_writer.async_add_table_data(table, identity)
 
@@ -107,6 +110,7 @@ class HttpReceiver(Resource):
             if 'sql' not in request.args:
                 logging.info("HttpReceiver: GET Query received with no sql.")
                 if format == TEXT:
+                    request.setHeader("Content-Type", "text/plain")
                     return "Must specify 'sql' param."
                 else:
                     response_meta = { "response_op" : "error", "error_message" : "Must specify 'sql' param", "identity" : util.Identity.get_identity() }
@@ -124,6 +128,7 @@ class HttpReceiver(Resource):
             except Exception as e:
                 logging.error('HttpReceiver: Error processing sql: %s: %s', str(e), sql)
                 if format == TEXT:
+                    request.setHeader("Content-Type", "text/plain")
                     return "Error processing sql: %s" % str(e)
                 else:
                     response_meta = { "response_op" : "error", "error_message" : "Error processing sql: %s" % str(e), "identity" : util.Identity.get_identity() }
@@ -134,6 +139,8 @@ class HttpReceiver(Resource):
         return json.dumps(response_meta)
 
     def render_POST(self, request):
+
+        request.setHeader("Content-Type", "application/json")
 
         #pprint(request.__dict__)
         obj = dict()
