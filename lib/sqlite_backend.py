@@ -554,6 +554,10 @@ class SqlConnections(object):
 
         tablename = table.get_tablename()
 
+        if tablename is None:
+            logging.info("SqlConnections: Unknown tablename from '%s'", identity)
+            return
+
         update = table.get_property('update')
         static = table.get_property('static')
         persist = table.get_property('persist')

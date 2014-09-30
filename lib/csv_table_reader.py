@@ -51,7 +51,6 @@ class CsvTableReader(object):
                    tablename_lineno=-1,
                    skip_linenos=set()):
 
-   
         table = qasino_table.QasinoTable(tablename)
 
         column_names = None
@@ -65,11 +64,11 @@ class CsvTableReader(object):
                 if lineno in skip_linenos:
                     continue
 
-                elif tablename_lineno != None and tablename_lineno == lineno:
+                elif tablename_lineno == lineno:
 
                     table.set_tablename(line)
 
-                elif options_lineno != None and options_lineno == lineno:
+                elif options_lineno == lineno:
 
                     try:
                         parsed = csv.reader( [ line ] ).next()
@@ -88,11 +87,13 @@ class CsvTableReader(object):
                                     table.set_property('persist', 1)
                                 elif m.group(1) == 'keycols':
                                     table.set_property('keycols', m.group(2))
+                                elif m.group(1) == 'identity':
+                                    table.set_property('identity', m.group(2))
 
                     except Exception as inst:
                         raise Exception("Unable to parse options: %s" % (lineno + 1, inst))
 
-                elif types_lineno != None and types_lineno == lineno:
+                elif types_lineno == lineno:
 
                     try:
                         parsed = csv.reader( [ line ] ).next()
@@ -105,7 +106,7 @@ class CsvTableReader(object):
 
                     table.set_column_types(column_types)
 
-                elif colnames_lineno != None and colnames_lineno == lineno:
+                elif colnames_lineno == lineno:
 
                     column_names = csv.reader( [ line ] ).next()
                 
