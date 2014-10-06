@@ -6,7 +6,9 @@ organizationName := "MediaMath"
 
 organizationHomepage := Some(url("http://mediamath.com"))
 
-scalaVersion := "2.10.3"
+scalaVersion := "2.11.2"
+
+scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
 
 credentials += Credentials("Restricted", "build.datasvc.mediamath.com", "eng", "1qa2ws3e")
 
@@ -25,15 +27,15 @@ testOptions in ThisBuild <+= (target in Test) map {
 }
 
 libraryDependencies ++= Seq(
-  "org.slf4j" % "slf4j-api" % "1.7.5",
-  "ch.qos.logback" % "logback-classic" % "1.0.13",
-  "ch.qos.logback" % "logback-core" % "1.0.13",
-  "com.codahale.metrics" % "metrics-core" % "3.0.1",
-  "com.codahale.metrics" % "metrics-jvm" % "3.0.1",
+  "org.slf4j" % "slf4j-api" % "1.7.7",
+  "ch.qos.logback" % "logback-classic" % "1.1.2",
+  "ch.qos.logback" % "logback-core" % "1.1.2",
+  "io.dropwizard.metrics" % "metrics-core" % "3.1.0",
+  "io.dropwizard.metrics" % "metrics-jvm" % "3.1.0",
   "mediamath" %% "data-infra-commons" % "0.1-SNAPSHOT",
-  "net.databinder.dispatch" %% "dispatch-core" % "0.11.0",
-  "com.fasterxml.jackson.core" % "jackson-databind" % "2.3.1",
-  "org.scalatest" %% "scalatest" % "2.0" % "test",
-  "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.3.1"
+  "net.databinder.dispatch" %% "dispatch-core" % "0.11.2",
+  "com.fasterxml.jackson.core" % "jackson-databind" % "2.4.2",
+  "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.4.2",
+  "org.scalatest" %% "scalatest" % "2.2.2" % "test"
 )
 
