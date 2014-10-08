@@ -27,7 +27,6 @@ import scala.language.existentials
 import scala.collection.immutable.ListMap
 import org.slf4j.LoggerFactory
 import scala.concurrent.{ExecutionContext, Await}
-import scala.concurrent.duration._
 import java.io.IOException
 import scala.collection.JavaConversions._
 import mediamath.utils.PrefixedEnumeration
@@ -324,17 +323,11 @@ class QasinoReporter(builder: Builder) extends
     case meter:Metered =>
       Seq(
         ("mean_rate", "real", convertRate(meter.getMeanRate)),
+        ("m1_rate", "real", convertRate(meter.getOneMinuteRate)),
+        ("m5_rate", "real", convertRate(meter.getFiveMinuteRate)),
+        ("m15_rate", "real", convertRate(meter.getFifteenMinuteRate)),
         ("rate_unit", "text", rateUnit.toString)
-      ) ++ {
-        if (verbosity >= 1)
-          Seq(
-            ("m1_rate", "real", convertRate(meter.getOneMinuteRate)),
-            ("m5_rate", "real", convertRate(meter.getFiveMinuteRate)),
-            ("m15_rate", "real", convertRate(meter.getFifteenMinuteRate))
-          )
-        else
-          Seq.empty
-      }
+      )
     case _ => Seq.empty
   }
 
