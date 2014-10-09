@@ -127,10 +127,10 @@ class QasinoReporterSpec extends FlatSpec with Matchers {
         "timer_p99_time",
         "timer_p999_time",
         "timer_mean_rate",
-        "timer_rate_unit",
         "timer_m1_rate",
         "timer_m5_rate",
-        "timer_m15_rate"
+        "timer_m15_rate",
+        "timer_rate_unit"
       )
 
 			"The column_names" should "be " + correctColumnNames in {
@@ -161,10 +161,10 @@ class QasinoReporterSpec extends FlatSpec with Matchers {
         "real",
         "real",
         "real",
-        "text",
         "real",
         "real",
-        "real"
+        "real",
+        "text"
       )
 			"The column_types" should "be " + correctColumnTypes in {
 				tableDataMap("column_types") should be (correctColumnTypes)
