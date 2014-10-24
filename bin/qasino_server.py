@@ -24,7 +24,8 @@ import crypt
 from twisted.internet import reactor, ssl, task
 from twisted.application.internet import TCPServer
 from twisted.application.service import Application
-from twisted.web import server, resource, http, guard
+from twisted.web import server, resource, http, guard, static
+from twisted.web.util import redirectTo
 from twisted.python import log
 from OpenSSL import SSL
 from twisted.cred.portal import Portal, IRealm
@@ -47,6 +48,7 @@ import data_manager
 import zmq_receiver
 import zmq_requestor
 import http_receiver
+import http_receiver_ui
 import zmq_publisher
 import constants
 import util
@@ -81,6 +83,10 @@ if __name__ == "__main__":
                       help="Directory where server keys can be found.", metavar="DIR")
     parser.add_option("-p", "--htpasswd-file", dest="htpasswd_file", default='/opt/qasino/etc/htpasswd',
                       help="Path to htpasswd file.", metavar="FILE")
+    parser.add_option("-s", "--static-content-dir", dest="static_content_dir", default='/opt/qasino/etc/htdocs/static',
+                      help="Path to static content dir.", metavar="DIR")
+    parser.add_option("-t", "--templates-dir", dest="templates_dir", default='/opt/qasino/etc/htdocs/templates',
+                      help="Path to template dir.", metavar="DIR")
 
     (options, args) = parser.parse_args()
 
@@ -154,10 +160,28 @@ if __name__ == "__main__":
     http_root = resource.Resource()
     http_root.putChild("request", http_receiver.HttpReceiver(data_manager))
 
+    http_root.putChild("static",  static.File(options.static_content_dir))
+
+    http_root.putChild("",        http_receiver_ui.UIResourceTables(options.templates_dir, data_manager))
+    http_root.putChild("tables",  http_receiver_ui.UIResourceTables(options.templates_dir, data_manager))
+    http_root.putChild("desc",    http_receiver_ui.UIResourceDesc(options.templates_dir, data_manager))
+    http_root.putChild("query",   http_receiver_ui.UIResourceQuery(options.templates_dir, data_manager))
+
     http.HTTPFactory.protocol = http_receiver.MyLoggingHTTPChannel
     site = server.Site(http_root)
 
     reactor.listenTCP(constants.HTTP_PORT, site)
+
+    # If the http port isn't port 80 make port 80 redirect to SSL.
+    if constants.HTTP_PORT != 80:
+        class SimpleRedirect(resource.Resource):
+            isLeaf = True
+
+            def render_GET(self, request):
+                return redirectTo('https://{}:{}'.format(request.getRequestHostname(), constants.HTTPS_PORT), request)
+
+        logging.info("Listening for HTTP requests on port 80 to redirect to 443")
+        reactor.listenTCP(80, server.Site(SimpleRedirect()))
 
     logging.info("Listening for HTTPS requests on port %d", constants.HTTPS_PORT)
 

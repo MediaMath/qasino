@@ -1,0 +1,29 @@
+<table class="table datatable">
+   
+   <thead>
+    <tr>
+{% for column in column_names %}
+    {% if column in pretty_column_names_map %}
+      <th>{{ pretty_column_names_map[column] }}</th>
+    {% else %}
+      <th>{{ column }}</th>
+    {% endif %}
+{% endfor %}
+    </tr>
+   </thead>
+
+  <tbody>
+{% for row in rows %}
+    <tr>
+    {% for cell in row %}
+      {% if column_names[loop.index0] in links %}
+        <td><a href="{{ links[column_names[loop.index0]] | format(cell) }}">{{ cell }}</a></td>
+      {% else %}
+        <td>{{ cell }}</td>
+      {% endif %}
+    {% endfor %}
+    </tr>
+{% endfor %}
+  </tbody>
+
+</table>

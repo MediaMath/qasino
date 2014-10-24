@@ -53,6 +53,7 @@ You'll need to have the following python libraries installed:
 - python-yaml
 - python-requests
 - python-txzmq
+- python-jinja2
 
 ##Running
 
@@ -90,8 +91,15 @@ interval that matches the generation interval.
 ##Querying (SQL)
 
 Qasino has a SQL interface.  Since Qasino uses SQLite on the backend
-you can refer the [SQLite SQL documentation](http://www.sqlite.org/lang.html) 
-for SQL syntax details.  Qasino can be queried with SQL using three different methods:
+you can refer to the [SQLite SQL documentation](http://www.sqlite.org/lang.html) 
+for SQL syntax details.  Qasino can be queried with SQL using four different methods:
+
+###Web UI
+
+Point your browser at Qasino and you'll get a basic web interface.
+The default page shows all the tables that Qasino knows about.  There
+are also tabs for describing tables and inputing custom SQL
+statements.
 
 ###Line receiver
 
@@ -134,7 +142,9 @@ It uses a json message with the following simple format:
 
 ###HTTP Interface
 
-Lastly you can connect with a simple HTTP request.  There are a couple variations.
+Lastly you can connect with a simple HTTP request.  The default HTTP
+port is 15597.  These requests can also go to the SSL port 443 but
+will require basic auth.  There are a couple variations.
 
 First you can POST a JSON request:
 
@@ -147,7 +157,7 @@ Or you can make a GET request with 'sql' as a query string param (be sure to url
     $ curl 'http://localhost:15597/request?op=query' --get --data-urlencode 'sql=select * from qasino_server_info;'
     {"table": {"rows": [["1382131545", "30", "1382131575.89"]], "column_names": ["generation_number", "generation_duration_s", "generation_start_epoch"]}, "max_widths": {"1": 21, "0": 17, "2": 22}, "response_op": "result_table", "identity": "1.2.3.4"}
 
-Or make a GET request with the 'format=text' query string parameter to get a human readable rendering of the table.
+Or make a GET request with the 'format=text' query string parameter to get a human readable rendering of the table.  Note you can also put this url right in a browser.
 
     $ curl 'http://1.2.3.4:15597/request?op=query&format=text' --get --data-urlencode 'sql=select * from qasino_server_info;'
     generation_number  generation_duration_s  generation_start_epoch

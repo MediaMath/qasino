@@ -1,0 +1,23 @@
+{% include 'header.html.j2' %}
+
+{% include 'navbar.html.j2' %}
+
+{% include 'errors.html.j2' %}
+
+<div style="padding: 0px 10px 10px 10px">
+<form class="form-inline" >
+    <label class="sr-only" for="inputTablename">Tablename</label>
+    <input type="text" size="30" name="tablename" class="form-control" id="inputTablename" placeholder="Tablename" value="{{ params.get('tablename', [""])[0] }}">
+    <button type="submit" class="btn btn-default">Go</button>
+</form>
+</div>
+
+{% if params.get('tablename', 0) %}
+
+<h3><a href="/query?sql=select+*+from+{{ params.get('tablename', [''])[0] }}+limit+1000">{{ params.get('tablename', [""])[0] }}</a></h3>
+
+   {% include 'show_table.html.j2' %}
+
+{% endif %}
+
+{% include 'footer.html.j2' %}
