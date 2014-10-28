@@ -20,7 +20,7 @@ import logging
 import time
 import string
 
-from util import Identity
+from util import Identity, unicode_safe_str
 import apsw_connection
 import qasino_table
 
@@ -197,10 +197,7 @@ class SqlConnections(object):
 
                 # Convert all to strings and compute the length.
 
-                if cell == None:
-                    cell = ''
-                else:
-                    cell = str(cell)
+                cell = unicode_safe_str(cell)
 
                 length = len(cell)
 

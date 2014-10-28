@@ -109,7 +109,7 @@ def pretty_print_table(outputter, table, max_widths=None, column_delim="  "):
 
             for column_index, cell in enumerate(row):
 
-                length = len(str(cell))
+                length = len(unicode_safe_str(cell))
 
                 if not max_widths.has_key(str(column_index)) or max_widths[str(column_index)] < length:
                     max_widths[str(column_index)] = length
@@ -141,7 +141,7 @@ def pretty_print_table(outputter, table, max_widths=None, column_delim="  "):
 
         nr_rows += 1
 
-        line = column_delim.join( [ str(cell).rjust(max_widths[str(index)]) 
+        line = column_delim.join( [ unicode_safe_str(cell).rjust(max_widths[str(index)]) 
                                     for index, cell in enumerate(row) 
                                   ] 
                                 )
@@ -152,6 +152,15 @@ def pretty_print_table(outputter, table, max_widths=None, column_delim="  "):
 
     outputter.sendLine("%d rows returned" % nr_rows)
 
+def unicode_safe_str(s):
+    if s is None:    # this is an added "feature"
+        return ''
+    elif type(s) is unicode:
+        # I can't get jinja in the http ui to encode as utf-8 instead of ascii (which barfs) so escape for now.
+        #return s.encode('utf-8')
+        return s.encode('unicode_escape')
+    else:
+        return str(s)
 
 
 def random_string(start, stop):

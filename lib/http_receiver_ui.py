@@ -40,6 +40,8 @@ class UIResource(Resource):
 
     def render_page(self, page_name, request, context={}):
         
+        request.setHeader("Content-Type", "text/html; charset=utf-8")
+
         ctx = { 'page' : page_name,
                 'params' : request.args }
 
@@ -49,10 +51,14 @@ class UIResource(Resource):
 
         template = self.jinja.get_template(page_name + ".html.j2")
 
-        return str(template.render(ctx))
+        output = template.render(ctx)
+
+        return output.encode('utf-8')
 
 
     def render_page_with_sql(self, page_name, sql, request, context={}):
+
+        request.setHeader("Content-Type", "text/html; charset=utf-8")
 
         query_id = self.data_manager.get_query_id()
         query_start = time.time()
@@ -98,7 +104,8 @@ class UIResource(Resource):
         else:
             ctx['error_message'] = 'No row or column data in result!'
 
-        request.write( str(template.render(ctx)) )
+        output = template.render(ctx)
+        request.write( output.encode('utf-8') )
 
         request.finish()
 
