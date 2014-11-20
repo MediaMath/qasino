@@ -1,5 +1,7 @@
 name := "QasinoReporter"
 
+version := "1.1.0-SNAPSHOT"
+
 organization := "mediamath"
 
 organizationName := "MediaMath"
@@ -16,8 +18,12 @@ externalResolvers := Resolver.withDefaultResolvers(resolvers.value, mavenCentral
   ("proxy" at "https://build.datasvc.mediamath.com/artifactory/repo")
 
 publishTo := {
-  scala.util.Properties.propIsSet("deploy_snapshot") match {
-    case true => Some("Snapshots" at "https://build.datasvc.mediamath.com/artifactory/snapshots-local")
+  scala.util.Properties.propIsSet("really_deploy") match {
+    case true =>
+      if (isSnapshot.value)
+        Some("Snapshots" at "https://build.datasvc.mediamath.com/artifactory/snapshots-local")
+      else
+        Some("Releases" at "https://build.datasvc.mediamath.com/artifactory/releases-local")
     case false => None
   }
 }
@@ -27,15 +33,17 @@ testOptions in ThisBuild <+= (target in Test) map {
 }
 
 libraryDependencies ++= Seq(
+  "mediamath" %% "data-infra-commons" % "1.1.0-SNAPSHOT"
+)
+
+libraryDependencies ++= Seq(
   "org.slf4j" % "slf4j-api" % "1.7.7",
   "ch.qos.logback" % "logback-classic" % "1.1.2",
   "ch.qos.logback" % "logback-core" % "1.1.2",
   "io.dropwizard.metrics" % "metrics-core" % "3.1.0",
   "io.dropwizard.metrics" % "metrics-jvm" % "3.1.0",
-  "mediamath" %% "data-infra-commons" % "0.1-SNAPSHOT",
   "net.databinder.dispatch" %% "dispatch-core" % "0.11.2",
   "com.fasterxml.jackson.core" % "jackson-databind" % "2.4.2",
   "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.4.2",
   "org.scalatest" %% "scalatest" % "2.2.2" % "test"
 )
-
