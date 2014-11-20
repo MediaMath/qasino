@@ -1,6 +1,6 @@
 name := "QasinoReporter"
 
-version := "1.1.0-SNAPSHOT"
+version := "1.2.0-SNAPSHOT"
 
 organization := "mediamath"
 
@@ -33,7 +33,7 @@ testOptions in ThisBuild <+= (target in Test) map {
 }
 
 libraryDependencies ++= Seq(
-  "mediamath" %% "data-infra-commons" % "1.1.0-SNAPSHOT"
+  "mediamath" %% "data-infra-commons" % "1.2.0-SNAPSHOT"
 )
 
 libraryDependencies ++= Seq(
