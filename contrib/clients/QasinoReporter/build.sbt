@@ -12,8 +12,6 @@ scalaVersion := "2.11.2"
 
 scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
 
-credentials += Credentials("Restricted", "build.datasvc.mediamath.com", "eng", "1qa2ws3e")
-
 externalResolvers := Resolver.withDefaultResolvers(resolvers.value, mavenCentral = false) :+
   ("proxy" at "https://build.datasvc.mediamath.com/artifactory/repo")
 
