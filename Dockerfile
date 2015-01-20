@@ -9,4 +9,5 @@ python-requests \
 python-twisted \
 python-txzmq \
 python-yaml
-RUN git clone https://github.com/fephsun/qasino.git /opt/qasino
+ADD ./ opt/qasino
+EXPOSE 15596 15597 15598
