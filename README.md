@@ -55,6 +55,12 @@ You'll need to have the following python libraries installed:
 - python-txzmq
 - python-jinja2
 
+Alternately, you can build qasino using [Docker](https://www.docker.com/).
+This will let you deploy qasino in a Docker container.  Simply call the Docker
+build command on the Dockerfile included in this repo:
+
+    docker build -t="my-container-name" /path/to/qasino/Dockerfile
+
 ##Running
 
 The server and the client can be run right from the main directory.
@@ -69,6 +75,15 @@ Connect with the SQL client:
 To run the CSV publisher:
 
     python bin/qasino_csvpublisher.py --identity 1.2.3.4 --index-file index.csv
+    
+To run using Docker, call `docker run` on the container you built.  You need
+to use the `-P` flag (or set port mappings manually) in order to send requests
+to the qasino server.  For example:
+
+    docker run -P my-container-name /opt/qasino/bin/qasino_server.py
+
+You can find the ports that Docker assigned to your qasino container using
+`docker ps`.
 
 ##Overview
 
