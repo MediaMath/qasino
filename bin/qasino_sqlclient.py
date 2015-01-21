@@ -272,7 +272,7 @@ if __name__ == "__main__":
         # switch to the right default port for zmq
         options.port = constants.ZMQ_RPC_PORT
     
-    print "Connecting to %s %s:%d." % ('https' if options.use_https else 'zmq', 
+    print "Connecting to %s %s:%s." % ('https' if options.use_https else 'zmq', 
                                        options.hostname, options.port)
 
 
