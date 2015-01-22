@@ -45,7 +45,10 @@ Qasino provides similar functionality but for much smaller scale environments.
 
 ##Installation
 
-You'll need to have the following python libraries installed:
+###Git clone
+
+To run qasino, you can clone this repo.  You'll need to have the following
+Python libraries installed:
 
 - python-twisted
 - python-zmq
@@ -54,14 +57,6 @@ You'll need to have the following python libraries installed:
 - python-requests
 - python-txzmq
 - python-jinja2
-
-Alternately, you can build qasino using [Docker](https://www.docker.com/).
-This will let you deploy qasino in a Docker container.  Simply call the Docker
-build command on the Dockerfile included in this repo:
-
-    docker build -t="my-container-name" /path/to/qasino/Dockerfile
-
-##Running
 
 The server and the client can be run right from the main directory.
 They will find the libraries they need in the lib directory. To run the server:
@@ -75,15 +70,39 @@ Connect with the SQL client:
 To run the CSV publisher:
 
     python bin/qasino_csvpublisher.py --identity 1.2.3.4 --index-file index.csv
-    
-To run using Docker, call `docker run` on the container you built.  You need
-to use the `-P` flag (or set port mappings manually) in order to send requests
-to the qasino server.  For example:
+
+###Docker
+
+Alternately, you can build qasino using [Docker](https://www.docker.com/).
+This will let you deploy qasino in a Docker container.  Simply call the Docker
+build command on the Dockerfile included in this repo:
+
+    docker build -t="my-container-name" /path/to/qasino/
+
+To run the qasino server using Docker, call `docker run` on the container you
+built.  You need to use the `-P` flag (or set port mappings manually) in order
+to send requests to the qasino server.  For example:
 
     docker run -P my-container-name /opt/qasino/bin/qasino_server.py
 
 You can find the ports that Docker assigned to your qasino container using
 `docker ps`.
+
+###Pip (client only)
+
+You can also install the qasino SQL client using `pip`.  This will let you query 
+a qasino server from the command line (like running the 
+`bin/qasino_sqlclient.py` program).  This should work on most Linux / OS X 
+computers:
+
+    pip install qasino_client
+
+Afterwards, the command `qasinosql` will start a command line interface to a 
+qasino server.  `qasinosql` takes the same flags as `qasino_sqlclient.py`; in 
+fact, the former is simply a wrapper around the latter.  For example:
+
+    qasinosql -H 1.2.3.4 -p 15598
+
 
 ##Overview
 
