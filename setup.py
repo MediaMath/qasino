@@ -9,9 +9,9 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     
 setup(
     name='qasino_client',
-    version='1.6.0',
+    version='1.6.1',
     
-    description='(insert description here)',
+    description='A command line client for the qasino project.',
     long_description=long_description,
     
     url='https://github.com/MediaMath/qasino',
@@ -30,6 +30,6 @@ setup(
     package_dir = {'qasino_client': ''},
     packages=['qasino_client', 'qasino_client.lib'],
     py_modules=['qasino_client.bin.qasino_sqlclient'],
-    scripts=['bin/qasino_sqlclient_runner.py'],
+    scripts=['bin/qasinosql'],
     install_requires=['requests', 'txzmq'],
 )
