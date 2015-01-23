@@ -90,10 +90,11 @@ You can find the ports that Docker assigned to your qasino container using
 
 ###Pip (client only)
 
-You can also install the qasino SQL client using `pip`.  This will let you query 
-a qasino server from the command line (like running the 
-`bin/qasino_sqlclient.py` program).  This should work on most Linux / OS X 
-computers:
+You can also install the qasino SQL client and publisher using `pip`.  This
+will let you query a qasino server from the command line (like running the 
+`bin/qasino_sqlclient.py` program), and submit CSV files to a qasino server
+from the command line (like running the `bin/qasino_csvpublisher.py` program).
+This should work on most Linux / OS X computers:
 
     pip install qasino_client
 
@@ -102,6 +103,12 @@ qasino server.  `qasinosql` takes the same flags as `qasino_sqlclient.py`; in
 fact, the former is simply a wrapper around the latter.  For example:
 
     qasinosql -H 1.2.3.4 -p 15598
+    
+Likewise, the command `qasinocsvpub` is a wrapper around
+`qasino_csvpublisher.py`, and will repeatedly submit a set of CSV files to a
+qasino server.  (See the docs below for more details.)  Example usage:
+
+    qasinocsvpub --identity 1.2.3.4 -H localhost --index index.csv -p 15598 -P 15596
 
 
 ##Overview
