@@ -9,7 +9,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     
 setup(
     name='qasino_client',
-    version='1.6.1',
+    version='1.6.2',
     
     description='A command line client for the qasino project.',
     long_description=long_description,
@@ -29,7 +29,9 @@ setup(
     
     package_dir = {'qasino_client': ''},
     packages=['qasino_client', 'qasino_client.lib'],
-    py_modules=['qasino_client.bin.qasino_sqlclient'],
-    scripts=['bin/qasinosql'],
+    py_modules=['qasino_client.bin.qasino_sqlclient',
+                'qasino_client.bin.qasino_csvpublisher'],
+    scripts=['bin/qasinosql',
+             'bin/qasinocsvpub'],
     install_requires=['requests', 'txzmq'],
 )
