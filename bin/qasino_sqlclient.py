@@ -210,7 +210,7 @@ def signal_handler(signum, frame):
     print "Caught %s.  Exiting..." % sig_names[signum]
     exit(0)
 
-if __name__ == "__main__":
+def run():
 
     parser = OptionParser()
 
@@ -308,3 +308,7 @@ if __name__ == "__main__":
 
         # Enter the command loop.
         QasinoCmd(conn).cmdloop()
+        
+if __name__ == "__main__":
+    run()
+
