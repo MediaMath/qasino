@@ -406,6 +406,9 @@ def read_and_send_tables(requestor, options):
 
         index_dir = os.path.dirname(index_file)
 
+        if index_dir == "":
+            index_dir = "."
+
         csv_files = get_csv_files_from_index(index_file)
 
         if csv_files is None or len(csv_files) <= 0:
@@ -445,14 +448,15 @@ def read_and_send_tables(requestor, options):
             table_info[tablename]["error_msg"] = ''
             table_info[tablename]["read_epoch"] = time.time()
             table_info[tablename]["mtime"] = get_mtime(filepath)
+            table_info[tablename]["read_time_s"] = -1
 
             try:
                 filehandle = open(filepath, 'r')
             except Exception as e:
                 nr_errors += 1
                 table_info[tablename]["nr_errors"] = 1
-                table_info[tablename]["error_msg"] = e.str()
-                logging.info("Failure reading csv file '%s': %s", filepath, error)
+                table_info[tablename]["error_msg"] = str(e)
+                logging.info("Failure opening csv file '%s': %s", filepath, str(e))
                 continue
 
             # Ignore the 2nd and 5th lines.  Names in 3rd, types in 4th.  The "version" in the first line is now the options list.
@@ -535,13 +539,13 @@ def publish_tables_table(requestor, table_info):
     for tablename, table_stats in table_info.iteritems():
         table.add_row( [ Identity.get_identity(), 
                          tablename,
-                         table_stats["read_epoch"], 
-                         table_stats["read_time_s"], 
-                         table_stats["mtime"], 
-                         table_stats["nr_errors"],
-                         table_stats["error_msg"],
-                         table_stats["nr_rows"],
-                         table_stats["filepath"] ] )
+                         table_stats.get("read_epoch", 0),
+                         table_stats.get("read_time_s", -1),
+                         table_stats.get("mtime", 0),
+                         table_stats.get("nr_errors", 0),
+                         table_stats.get("error_msg", ""),
+                         table_stats.get("nr_rows", -1),
+                         table_stats.get("filepath", "") ] )
         
     logging.info("Sending table '%s' to '%s:%d' (%d rows).", this_tablename, options.hostname, options.port, table.get_nr_rows())
 
