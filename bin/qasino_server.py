@@ -172,17 +172,6 @@ if __name__ == "__main__":
 
     reactor.listenTCP(constants.HTTP_PORT, site)
 
-    # If the http port isn't port 80 make port 80 redirect to SSL.
-    if constants.HTTP_PORT != 80:
-        class SimpleRedirect(resource.Resource):
-            isLeaf = True
-
-            def render_GET(self, request):
-                return redirectTo('https://{}:{}'.format(request.getRequestHostname(), constants.HTTPS_PORT), request)
-
-        logging.info("Listening for HTTP requests on port 80 to redirect to 443")
-        reactor.listenTCP(80, server.Site(SimpleRedirect()))
-
     logging.info("Listening for HTTPS requests on port %d", constants.HTTPS_PORT)
 
     class SimpleRealm(object):
@@ -223,6 +212,22 @@ if __name__ == "__main__":
 
     except Exception as e:
         logging.info("Failed to listen on SSL port %d, continuing anyway (%s).", constants.HTTPS_PORT, str(e))
+
+
+    # If the http port isn't port 80 make port 80 redirect to SSL.
+    if constants.HTTP_PORT != 80:
+        class SimpleRedirect(resource.Resource):
+            isLeaf = True
+
+            def render_GET(self, request):
+                return redirectTo('https://{}:{}'.format(request.getRequestHostname(), constants.HTTPS_PORT), request)
+
+        try:
+            reactor.listenTCP(80, server.Site(SimpleRedirect()))
+            logging.info("Listening for HTTP requests on port 80 to redirect to 443")
+        except Exception as e:
+            logging.info("Warning: failed to listen for HTTP requests on port 80 to redirect to 443: {}".format(str(e)))
+
 
     # Create a listener for responding to ZeroMQ requests.
 
