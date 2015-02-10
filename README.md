@@ -217,12 +217,12 @@ Qasino server automatically publishes the following internal tables:
 
 The following commands are shortcuts to looking at these tables:
 - SHOW info;
-- SHOW tables;
+- SHOW tables [ LIKE '%string%' ];
 - SHOW connections;
 - SHOW views;
 
-The schema for a table can be found with 'DESC <tablename>;' and the
-definition of a view can be found with 'DESC VIEW <viewname>;'
+The schema for a table can be found with `DESC <tablename>;` and the
+definition of a view can be found with `DESC VIEW <viewname>;`
 
 
 ##Publishing
@@ -397,7 +397,8 @@ Some things to note.
 
 - The stats are carried forward for each successive generation so that means the server has to hold onto an extra copy of the stats which can consume additional memory.
 - If the server is restarted the persistent stats will go away until they are resent.
-- The tables are tracked per tablename (at the moment), so multiple updates for the same table overwrite.
+- The tables are tracked per tablename + identity, so multiple updates for the same table and identity overwrite but same table and different identity will merge.
+
 
 ###Static tables
 
