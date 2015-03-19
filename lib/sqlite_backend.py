@@ -152,7 +152,7 @@ class SqlConnections(object):
 
             self.stats['sql_errors'] = self.stats.get('sql_errors', 0) + 1
 
-            return { "retval": 1, "error_message" : e }
+            return { "retval": 1, "error_message" : str(e) }
 
         # Find the max column with for each column.
 
@@ -187,30 +187,38 @@ class SqlConnections(object):
 
         # For each row.
 
-        for row in txn.fetchall():
+        # Under certain circustances (like 'select 1; abc') we'll get an exception in fetchall!
+        try:
+            for row in txn.fetchall():
 
-            saved_row = []
+                saved_row = []
 
-            # For each column.
+                # For each column.
 
-            for column_index, cell in enumerate(row):
+                for column_index, cell in enumerate(row):
 
-                # Convert all to strings and compute the length.
+                    # Convert all to strings and compute the length.
 
-                cell = unicode_safe_str(cell)
+                    cell = unicode_safe_str(cell)
 
-                length = len(cell)
+                    length = len(cell)
 
-                if not max_widths.has_key(str(column_index)) or max_widths[str(column_index)] < length:
-                    max_widths[str(column_index)] = length
+                    if not max_widths.has_key(str(column_index)) or max_widths[str(column_index)] < length:
+                        max_widths[str(column_index)] = length
 
-                # Save the cell to the row for output later.
+                    # Save the cell to the row for output later.
 
-                saved_row.append(cell)
+                    saved_row.append(cell)
 
-            # Save the row to the rows for output later.
+                # Save the row to the rows for output later.
 
-            saved_rows.append(saved_row)
+                saved_rows.append(saved_row)
+
+        except ValueError as e:
+
+            self.stats['sql_errors'] = self.stats.get('sql_errors', 0) + 1
+
+            return { "retval": 1, "error_message" : str(e) }
 
 
         self.stats['sql_completed'] = self.stats.get('sql_completed', 0) + 1
