@@ -193,9 +193,19 @@ def check_for_gen_signal_timeout(options, prev_subscriber, requestor, zmq_factor
         
         import zmq_subscriber
 
-        prev_subscriber.shutdown()
+        # this might fail with zmq.error.ZMQError when connect fails
+        try:
+            subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
+        except Exception as e:
 
-        subscriber = zmq_subscriber.ZmqSubscriber(options.hostname, options.pubsub_port, zmq_factory)
+            logging.warning("Restart of ZeroMQ subscriber failed, will try again: %s", e)
+            # Reset the timer and last signal time so we don't attempt re-subscribe right away.
+            last_gen_signal_time = time.time()
+            # Reset the timer to check again in a bit (use prev_subscriber)
+            reactor.callLater(5, check_for_gen_signal_timeout, options, prev_subscriber, requestor, zmq_factory)
+            return
+
+        prev_subscriber.shutdown()
 
         # Read and send the table when a generation signal comes in.
 
