@@ -647,7 +647,10 @@ class SqlConnections(object):
             # This should only happen if we exceed the busy timeout.
             logging.info("SqlConnections: Warning: Lock contention for adding table '%s': %s for %s", tablename, str(e), identity)
 
-            txn.execute("ROLLBACK;")
+            try:
+                txn.execute("ROLLBACK;")
+            except:
+                pass
 
             # Should we try again?
             if table.test_retry():
@@ -662,7 +665,10 @@ class SqlConnections(object):
         except CreateTableException as e:
             # Message when raised
 
-            txn.execute("ROLLBACK;")
+            try:
+                txn.execute("ROLLBACK;")
+            except:
+                pass
 
             # Should we try again?
             if table.test_retry():
@@ -677,7 +683,10 @@ class SqlConnections(object):
         except Exception as e:
             logging.info("SqlConnections: ERROR: Failed to add table '%s': %s", tablename, e)
 
-            txn.execute("ROLLBACK;")
+            try:
+                txn.execute("ROLLBACK;")
+            except:
+                pass
 
             return 0
 
