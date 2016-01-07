@@ -20,6 +20,8 @@ import logging
 
 import qasino_table
 
+def removeNonAscii(s): return "".join(i for i in s if ord(i)<128)
+
 class CsvTableReader(object):
 
     csv_to_qasino_type_map = { 'str' : 'TEXT',
@@ -146,7 +148,7 @@ class CsvTableReader(object):
                             elif column_type == 'REAL':
                                 output_row.append(float(column_cell))
                             else:
-                                output_row.append(column_cell)
+                                output_row.append(removeNonAscii(column_cell))
                         except Exception as e:
                             raise Exception("Parse error on line %d: %s" % (lineno + 1, str(e) ))
     
