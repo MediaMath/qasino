@@ -125,7 +125,7 @@ class SqlConnections(object):
         except Exception as e:
             logging.info("SqlConnections: dbpool.close failed in shutdown: %s", e)
 
-        if filename != ':memory:':
+        if filename != ':memory:' and os.path.exists(filename):
 
             if archive_db_dir:
                 logging.info("SqlConnections: Archiving db file '%s' to '%s'", filename, archive_db_dir)
@@ -138,8 +138,7 @@ class SqlConnections(object):
                 try:
                     os.remove(filename)
                 except Exception as e:
-                    pass  # ignore these
-                    ##logging.info("SqlConnections: ERROR: Could not remove db file! %s", e)
+                    logging.info("SqlConnections: ERROR: Could not remove db file! %s", e)
 
     def do_select(self, txn, sql):
 
