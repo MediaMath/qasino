@@ -1,4 +1,4 @@
-VERSION := `head -1 debian/changelog | awk '{print $2}' | grep -o '\d\+.\d\+'`
+VERSION := `head -1 debian/changelog | awk '{print $2}' | grep -o -e '\([0-9\.]\+\)' | tr -d '()'`
 
 all: docker-client docker-server
 

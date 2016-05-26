@@ -4,7 +4,7 @@ set -e
 if [ -z "$1" ]; then
 
   if [ -z $QASINO_HOST ]; then
-    echo "Please spcify a QASINO_HOST."
+    echo "Please specify a QASINO_HOST."
     exit 1
   fi
 
