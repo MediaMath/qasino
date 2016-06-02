@@ -1,0 +1,7 @@
+twisted
+zmq
+httplib2
+apsw
+requests
+jinja2
+txzmq

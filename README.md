@@ -58,6 +58,10 @@ Python libraries installed:
 - python-txzmq
 - python-jinja2
 
+For this you can use
+
+    pip install -r requirements.txt
+
 The server and the client can be run right from the main directory.
 They will find the libraries they need in the lib directory. To run the server:
 
@@ -70,6 +74,10 @@ Connect with the SQL client:
 To run the CSV publisher:
 
     python bin/qasino_csvpublisher.py --identity 1.2.3.4 --index-file index.csv
+    
+###Building
+
+You can run *make* against the root directory of this project to generate docker images for the qasino client and server. You can also run *make pkg* to generate a debian package.
 
 ###Docker
 
@@ -87,6 +95,14 @@ to send requests to the qasino server.  For example:
 
 You can find the ports that Docker assigned to your qasino container using
 `docker ps`.
+
+It is also possible to build a Docker image for the client.
+
+    docker build -t "my-qasino-client" -f Dockerfile.client /path/to/qasino
+    
+This will create the qasino client Docker image. The default run command for this image expects an environment variable of QASINO_HOST and will run qasino_sqlclient.py by default
+
+    docker run -it -e QASINO_HOST=my-qasino-host my-qasino-client
 
 ###Pip (client only)
 
