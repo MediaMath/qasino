@@ -4,7 +4,7 @@ REPO ?=
 
 docker-client:
 	docker build -t "${REPO}qasino-client:${VERSION}-${UNIQUE_TAG}" -f Dockerfile.client .
- 	docker push "${REPO}qasino-client:${VERSION}-${UNIQUE_TAG}"
+	docker push "${REPO}qasino-client:${VERSION}-${UNIQUE_TAG}"
 	echo "Client container image created."
 
 docker-server:
