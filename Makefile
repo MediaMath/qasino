@@ -2,6 +2,8 @@ VERSION := `head -1 debian/changelog | awk '{print $2}' | grep -o -e '\([0-9\.]\
 UNIQUE_TAG ?= `date +%s`
 REPO ?=
 
+all:
+
 docker-client:
 	docker build -t "${REPO}qasino-client:${VERSION}-${UNIQUE_TAG}" -f Dockerfile.client .
 	docker push "${REPO}qasino-client:${VERSION}-${UNIQUE_TAG}"
