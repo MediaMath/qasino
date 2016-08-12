@@ -107,10 +107,10 @@ if __name__ == '__main__':
     parser.add_option("-p", "--port", dest="port", default=-1,
                       help="Use PORT to connect to", metavar="PORT")
 
-    parser.add_option("-u", "--username", dest="username", 
+    parser.add_option("-u", "--username", dest="username", default=os.environ.get('QASINO_CLIENT_USERNAME', None),
                       help="HTTPS auth username")
 
-    parser.add_option("-w", "--password", dest="password", 
+    parser.add_option("-w", "--password", dest="password", default=os.environ.get('QASINO_CLIENT_PASSWORD', None),
                       help="HTTPS auth password")
 
     parser.add_option("-P", "--persist", dest="persist", default=False, action="store_true",
