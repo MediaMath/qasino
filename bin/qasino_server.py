@@ -34,8 +34,8 @@ from twisted.cred.checkers import FilePasswordDB
 from zope.interface import implements
 
 for path in [
-    os.path.join('opt', 'qasino', 'lib'),
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib'))
+        os.path.join('opt', 'qasino', 'lib'),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 ]:
     if os.path.exists(os.path.join(path, '__init__.py')):
         sys.path.insert(0, path)
@@ -69,23 +69,28 @@ if __name__ == "__main__":
 
     parser.add_option("-i", "--identity", dest="identity",
                       help="Use IDENTITY as identity", metavar="IDENTITY")
-    parser.add_option("-f", "--db-file", dest="db_file", 
+    parser.add_option("-f", "--db-file", dest="db_file",
                       help="Use FILE as the sqlite database", metavar="FILE")
     parser.add_option("-d", "--db-dir", dest="db_dir", default="/ramdisk/qasino/dbs",
                       help="Use DIR as the sqlite database", metavar="DIR")
     parser.add_option("-k", "--archive-db-dir", dest="archive_db_dir",
-                      help="Save database files to DIR after finished (otherwise they are deleted).", metavar="DIR")
+                      help="Save database files to DIR after finished (otherwise they are deleted).",
+                      metavar="DIR")
     parser.add_option("-g", "--generation-duration", dest="generation_duration_s", default=30,
-                      help="The length of a collection interval (generation) in seconds.", metavar="SECONDS")
+                      help="The length of a collection interval (generation) in seconds.",
+                      metavar="SECONDS")
     parser.add_option("-v", "--views-file", dest="views_file", default='views.conf',
                       help="A file containing a list of views to create.", metavar="FILE")
     parser.add_option("-K", "--keys-dir", dest="keys_dir", default='/opt/qasino/etc/keys/',
                       help="Directory where server keys can be found.", metavar="DIR")
-    parser.add_option("-p", "--htpasswd-file", dest="htpasswd_file", default='/opt/qasino/etc/htpasswd',
+    parser.add_option("-p", "--htpasswd-file", dest="htpasswd_file",
+                      default='/opt/qasino/etc/htpasswd',
                       help="Path to htpasswd file.", metavar="FILE")
-    parser.add_option("-s", "--static-content-dir", dest="static_content_dir", default='/opt/qasino/etc/htdocs/static',
+    parser.add_option("-s", "--static-content-dir", dest="static_content_dir",
+                      default='/opt/qasino/etc/htdocs/static',
                       help="Path to static content dir.", metavar="DIR")
-    parser.add_option("-t", "--templates-dir", dest="templates_dir", default='/opt/qasino/etc/htdocs/templates',
+    parser.add_option("-t", "--templates-dir", dest="templates_dir",
+                      default='/opt/qasino/etc/htdocs/templates',
                       help="Path to template dir.", metavar="DIR")
 
     (options, args) = parser.parse_args()
@@ -108,7 +113,7 @@ if __name__ == "__main__":
 
     # For verbose adbapi logging...
     ##log.startLogging(sys.stdout)
-    
+
     # Create a ZMQ factory
 
     zmq_factory = ZmqFactory()
@@ -116,15 +121,16 @@ if __name__ == "__main__":
     # Create a Pub/sub channel to blast out new generation signals.
 
     logging.info("Listening for ZeroMQ pub/sub clients on port %d.", constants.ZMQ_PUBSUB_PORT)
-    
+
     zmq_publisher = zmq_publisher.ZmqPublisher(zmq_factory, constants.ZMQ_PUBSUB_PORT, data_manager)
 
 
     # Create a Data Manager instance that changes the sql backend's
     # pointers for which db is queried and which db is updated.
 
-    data_manager = data_manager.DataManager(options.db_file, db_dir=options.db_dir, 
-                                            signal_channel=zmq_publisher, archive_db_dir=options.archive_db_dir,
+    data_manager = data_manager.DataManager(options.db_file, db_dir=options.db_dir,
+                                            signal_channel=zmq_publisher,
+                                            archive_db_dir=options.archive_db_dir,
                                             generation_duration_s=options.generation_duration_s)
 
     def reread_views(views_file):
@@ -152,7 +158,7 @@ if __name__ == "__main__":
 
     reactor.listenTCP(constants.SQL_PORT, sql_receiver.SqlReceiverFactory(data_manager))
 
-    
+
     # Create a listener for responding to http requests.
 
     logging.info("Listening for HTTP requests on port %d", constants.HTTP_PORT)
@@ -198,20 +204,21 @@ if __name__ == "__main__":
     wrapper = guard.HTTPAuthSessionWrapper( Portal(SimpleRealm(), checkers),
                                             [ guard.BasicCredentialFactory('qasino.com') ])
 
-    ssl_site =  server.Site(wrapper)
+    ssl_site = server.Site(wrapper)
 
     try:
         if not os.path.isfile(options.htpasswd_file):
             raise Exception("htpasswd file '%s' does not exist" % options.htpasswd_file)
 
-        reactor.listenSSL(constants.HTTPS_PORT, 
-                          ssl_site, 
-                          ssl.DefaultOpenSSLContextFactory(options.keys_dir + 'server.key', 
+        reactor.listenSSL(constants.HTTPS_PORT,
+                          ssl_site,
+                          ssl.DefaultOpenSSLContextFactory(options.keys_dir + 'server.key',
                                                            options.keys_dir + 'server.crt')
                          )
 
     except Exception as e:
-        logging.info("Failed to listen on SSL port %d, continuing anyway (%s).", constants.HTTPS_PORT, str(e))
+        logging.info("Failed to listen on SSL port %d, continuing anyway (%s).", 
+                     constants.HTTPS_PORT, str(e))
 
 
     # If the http port isn't port 80 make port 80 redirect to SSL.
