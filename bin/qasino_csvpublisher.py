@@ -455,7 +455,7 @@ def read_and_send_tables(requestor, options):
             table_info[tablename]["filepath"] = filepath
             table_info[tablename]["nr_rows"] = -1
             table_info[tablename]["nr_errors"] = 0
-            table_info[tablename]["error_msg"] = ''
+            table_info[tablename]["error_message"] = ''
             table_info[tablename]["read_epoch"] = time.time()
             table_info[tablename]["mtime"] = get_mtime(filepath)
             table_info[tablename]["read_time_s"] = -1
@@ -465,7 +465,7 @@ def read_and_send_tables(requestor, options):
             except Exception as e:
                 nr_errors += 1
                 table_info[tablename]["nr_errors"] = 1
-                table_info[tablename]["error_msg"] = str(e)
+                table_info[tablename]["error_message"] = str(e)
                 logging.info("Failure opening csv file '%s': %s", filepath, str(e))
                 continue
 
@@ -483,7 +483,7 @@ def read_and_send_tables(requestor, options):
             if table == None:
                 nr_errors += 1
                 table_info[tablename]["nr_errors"] = 1
-                table_info[tablename]["error_msg"] = error
+                table_info[tablename]["error_message"] = error
                 logging.info("Failure reading csv file '%s': %s", filepath, error)
                 continue
 
@@ -542,7 +542,7 @@ def publish_tables_table(requestor, table_info):
     table.add_column("read_time_s", "int")
     table.add_column("mtime", "int")
     table.add_column("nr_errors", "int")
-    table.add_column("error_msg", "int")
+    table.add_column("error_message", "varchar")
     table.add_column("nr_rows", "int")
     table.add_column("filepath", "varchar")
 
@@ -553,7 +553,7 @@ def publish_tables_table(requestor, table_info):
                          table_stats.get("read_time_s", -1),
                          table_stats.get("mtime", 0),
                          table_stats.get("nr_errors", 0),
-                         table_stats.get("error_msg", ""),
+                         table_stats.get("error_message", ""),
                          table_stats.get("nr_rows", -1),
                          table_stats.get("filepath", "") ] )
         
