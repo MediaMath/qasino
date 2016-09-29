@@ -106,11 +106,13 @@ class SqlConnections(object):
         # schedule a call to shutdown (which must be static since this
         # is the dtor!) for later.
 
+        # Note, we call once for each dbpool but pass archive dir to archive only one.
+
         if self.main_thread == thread.get_ident():
-            SqlConnections.shutdown(self.writer_dbpool, self.filename, self.archive_db_dir)
+            SqlConnections.shutdown(self.writer_dbpool, self.filename, None)
             SqlConnections.shutdown(self.reader_dbpool, self.filename, self.archive_db_dir)
         else:
-            reactor.callLater(0.1, SqlConnections.shutdown, self.writer_dbpool, self.filename, self.archive_db_dir)
+            reactor.callLater(0.1, SqlConnections.shutdown, self.writer_dbpool, self.filename, None)
             reactor.callLater(0.1, SqlConnections.shutdown, self.reader_dbpool, self.filename, self.archive_db_dir)
 
     @staticmethod
@@ -119,6 +121,8 @@ class SqlConnections(object):
         Facilitates cleaning up filesystem objects after the last
         user of the connection pool goes away.
         """
+
+        logging.info("SqlConnections.shutdown called: dbpool={}, filename={}, archive_db_dir={}".format(dbpool, filename, archive_db_dir))
 
         try:
             dbpool.close()

@@ -27,6 +27,7 @@ import thread
 
 from twisted.internet import threads
 from twisted.internet import task
+from twisted.internet import reactor
 
 class DataManager(object):
 
@@ -150,16 +151,28 @@ class DataManager(object):
 
     def validate_and_route_query(self, txn, sql, query_id, sql_backend):
 
-        m = re.search(r"^\s*select\s+", sql, flags=re.IGNORECASE)
-        if m == None:
+        # So when dbs rotate we'll force a shutdown of the backend
+        # after a certain amount of time to avoid hung or long running
+        # things in this code path from holding dbs open.  This
+        # may/will invalidate references we might have in here so wrap
+        # it all in a try catch...
+        try:
+            m = re.search(r"^\s*select\s+", sql, flags=re.IGNORECASE)
+            if m == None:
 
-            # Process a non-select statement.
+                # Process a non-select statement.
 
-            return self.process_non_select(txn, sql, query_id, sql_backend)
+                return self.process_non_select(txn, sql, query_id, sql_backend)
 
-        # Process a select statement.
+            # Process a select statement.
 
-        return sql_backend.do_select(txn, sql)
+            return sql_backend.do_select(txn, sql)
+
+        except Exception as e:
+            
+            msg = "Exception in validate_and_route_query: {}".format(str(e))
+            logging.info(msg)
+            return { "retval" : 0, "error_message" : msg }
 
 
     def process_non_select(self, txn, sql, query_id, sql_backend):
@@ -333,6 +346,22 @@ class DataManager(object):
 
         # Set the reader to what was the writer
         # Note the reader will (should) be deconstructed here.
+
+        # Just in case something else is holding a ref to the reader
+        # (indefinitely!?)  force a shutdown of this backend after a
+        # certain amount of time though.
+
+        if self.sql_backend_reader:
+            reactor.callLater(self.generation_duration_s * 3, 
+                              sql_backend.SqlConnections.shutdown, 
+                              self.sql_backend_reader.writer_dbpool, 
+                              self.sql_backend_reader.filename, 
+                              None)
+            reactor.callLater(self.generation_duration_s * 3, 
+                              sql_backend.SqlConnections.shutdown, 
+                              self.sql_backend_reader.reader_dbpool, 
+                              self.sql_backend_reader.filename, 
+                              self.sql_backend_reader.archive_db_dir)
 
         self.sql_backend_reader = save_sql_backend_writer
 
