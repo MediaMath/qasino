@@ -20,6 +20,9 @@ import logging
 
 import qasino_table
 
+## Added to increase field size in csv
+csv.field_size_limit(sys.maxsize)
+
 def removeNonAscii(s): return "".join(i for i in s if ord(i)<128)
 
 class CsvTableReader(object):
@@ -46,7 +49,7 @@ class CsvTableReader(object):
         return True
 
 
-    def read_table(self, filehandle, tablename, 
+    def read_table(self, filehandle, tablename,
                    colnames_lineno=1,
                    types_lineno=2,
                    options_lineno=-1,
@@ -57,7 +60,7 @@ class CsvTableReader(object):
 
         column_names = None
         column_types = None
-    
+
         try:
             for lineno, line in enumerate(filehandle):
 
@@ -102,7 +105,7 @@ class CsvTableReader(object):
                         column_types = [ self.csv_to_qasino_type_map[x.strip()] for x in parsed ]
                     except Exception as inst:
                         raise Exception("Unsupported type in type list '%s' or parse error" % inst)
-    
+
                     if column_names != None and len(column_names) != len(column_types):
                         raise Exception("Number of type names does not match number of column names! (line %d)" % lineno + 1)
 
@@ -111,10 +114,10 @@ class CsvTableReader(object):
                 elif colnames_lineno == lineno:
 
                     column_names = csv.reader( [ line ] ).next()
-                
+
                     if column_types != None and len(column_names) != len(column_types):
                         raise Exception("Number of column names does not match number of column types! (line %d)" % lineno + 1)
-    
+
                     table.set_column_names(column_names)
 
                 # Data
@@ -123,17 +126,17 @@ class CsvTableReader(object):
                     input_row = csv.reader( [ line ] ).next()
 
                     ## Parse all the data into rows.
-    
+
                     output_row = list()
-    
+
                     # Read each column in data.
 
                     for column_index, column_cell in enumerate(input_row):
-    
+
                         ##print "%d CELL: %s  name: %s" % (column_index, column_cell, column_names[column_index])
-    
+
                         # Get the type so we know if it should be an int or not
-    
+
                         try:
                             column_type = column_types[column_index]
                         except:
@@ -151,11 +154,11 @@ class CsvTableReader(object):
                                 output_row.append(removeNonAscii(column_cell))
                         except Exception as e:
                             raise Exception("Parse error on line %d: %s" % (lineno + 1, str(e) ))
-    
+
                     if table.add_row(output_row) == -1:
                         raise Exception("Wrong number of rows on line %d: '%s'" % (lineno + 1, line))
-    
-                # END if .. else .. 
+
+                # END if .. else ..
 
             # END for each line
 
