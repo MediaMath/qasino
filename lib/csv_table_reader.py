@@ -54,7 +54,8 @@ class CsvTableReader(object):
                    types_lineno=2,
                    options_lineno=-1,
                    tablename_lineno=-1,
-                   skip_linenos=set()):
+                   skip_linenos=set(),
+                   table_limit=3000):
 
         table = qasino_table.QasinoTable(tablename)
 
@@ -62,6 +63,8 @@ class CsvTableReader(object):
         column_types = None
 
         try:
+            r = 0
+
             for lineno, line in enumerate(filehandle):
 
                 line = line.rstrip('\n\r')
@@ -122,6 +125,13 @@ class CsvTableReader(object):
 
                 # Data
                 else:
+
+
+                    if r >= table_limit:
+                        break
+                    else:
+                        r+=1
+
 
                     input_row = csv.reader( [ line ] ).next()
 
