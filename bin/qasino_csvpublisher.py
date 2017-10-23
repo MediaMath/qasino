@@ -61,10 +61,10 @@ def main():
     parser.add_option("-p", "--port", dest="port", default=constants.ZMQ_RPC_PORT, type=int,
                       help="Use PORT for qasino server", metavar="PORT")
 
-    parser.add_option("-u", "--username", dest="username",
+    parser.add_option("-u", "--username", dest="username", 
                       help="HTTPS auth username")
 
-    parser.add_option("-w", "--password", dest="password",
+    parser.add_option("-w", "--password", dest="password", 
                       help="HTTPS auth password")
 
     parser.add_option("-P", "--pubsub-port", dest="pubsub_port", default=constants.ZMQ_PUBSUB_PORT, type=int,
@@ -99,9 +99,6 @@ def main():
     parser.add_option("-g", "--gen-signal-timeout", dest="gen_signal_timeout", default=120, type=int,
                       help="Timeout after which we restart the generation signal subscription.")
 
-    parser.add_option("-l", "--table-limit-size", dest="table_limit_size", default=3000, type=int,
-                      help="Set the limitation for table size.")
-
     (options, args) = parser.parse_args()
 
     logging.info("Qasino csv publisher starting")
@@ -132,9 +129,9 @@ def main():
         requests_log = logging.getLogger("requests")
         requests_log.setLevel(logging.WARNING)
 
-        requestor = http_requestor.HttpRequestor(options.hostname, options.port,
+        requestor = http_requestor.HttpRequestor(options.hostname, options.port, 
                                                  username = options.username,
-                                                 password = options.password,
+                                                 password = options.password, 
                                                  skip_ssl_verify = options.skip_ssl_verify )
     else:  # Use zmq requestor
         import zmq_requestor
@@ -193,7 +190,7 @@ def check_for_gen_signal_timeout(options, prev_subscriber, requestor, zmq_factor
 
     if time.time() - last_gen_signal_time > options.gen_signal_timeout:
         logging.warning("Exceeded the generation signal timeout (%ds).  Restarting ZeroMQ subscriber.", options.gen_signal_timeout)
-
+        
         import zmq_subscriber
 
         # this might fail with zmq.error.ZMQError when connect fails
@@ -221,7 +218,7 @@ def check_for_gen_signal_timeout(options, prev_subscriber, requestor, zmq_factor
 
         # Reset the timer to check again in a bit.
         reactor.callLater(5, check_for_gen_signal_timeout, options, prev_subscriber, requestor, zmq_factory)
-
+        
 
 
 def get_csv_files_from_index(index_file):
@@ -259,7 +256,7 @@ def get_csv_files_from_index(index_file):
         else:
             tablename = fields[0]
             filename = fields[0] + ".csv"
-
+            
         results.append( [ filename, tablename ] )
 
     fh.close()
@@ -288,7 +285,7 @@ def get_index_list_file_indexes(index_list_file):
         # Skip comments
         m = re.match(r'\s*#', line)
         if m: continue
-
+        
         # Skip blank lines
         m = re.match(r'\s*$', line)
         if m: continue
@@ -324,7 +321,7 @@ def get_table_list_file_tables(table_list_file):
         # Skip comments
         m = re.match(r'\s*#', line)
         if m: continue
-
+        
         # Skip blank lines
         m = re.match(r'\s*$', line)
         if m: continue
@@ -340,7 +337,7 @@ def get_table_list_file_tables(table_list_file):
 
 
 def initiate_read_and_send_tables(requestor, options):
-    """
+    """ 
     Calls read_and_send_tables after a random delay to reduce "storming" the server.
     """
     global last_gen_signal_time
@@ -400,7 +397,7 @@ def read_and_send_tables(requestor, options):
 
     # Was there one or more index files given on the command line?
 
-    if options.indexes:
+    if options.indexes: 
         indexes = indexes + options.indexes
 
     # Was there an index list file given on the command line?
@@ -474,7 +471,6 @@ def read_and_send_tables(requestor, options):
 
             # Ignore the 2nd and 5th lines.  Names in 3rd, types in 4th.  The "version" in the first line is now the options list.
             (table, error) = csv_table_reader.read_table(filehandle, tablename,
-                                                         table_limit=int(options.table_limit_size),
                                                          skip_linenos={1, 4},
                                                          options_lineno=0,
                                                          types_lineno=3,
@@ -506,7 +502,7 @@ def read_and_send_tables(requestor, options):
 
             if error is not None:
                 logging.info("Error sending table '{}': {}".format(tablename, error))
-
+        
         # END for each csv file
 
     # END for each index
@@ -551,7 +547,7 @@ def publish_tables_table(requestor, table_info):
     table.add_column("filepath", "varchar")
 
     for tablename, table_stats in table_info.iteritems():
-        table.add_row( [ Identity.get_identity(),
+        table.add_row( [ Identity.get_identity(), 
                          tablename,
                          table_stats.get("read_epoch", 0),
                          table_stats.get("read_time_s", -1),
@@ -560,7 +556,7 @@ def publish_tables_table(requestor, table_info):
                          table_stats.get("error_message", ""),
                          table_stats.get("nr_rows", -1),
                          table_stats.get("filepath", "") ] )
-
+        
     logging.info("Sending table '%s' to '%s:%d' (%d rows).", this_tablename, options.hostname, options.port, table.get_nr_rows())
 
     requestor.send_table(table)
