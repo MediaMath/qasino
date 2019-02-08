@@ -5,3 +5,5 @@ apsw
 requests
 jinja2
 txzmq
+pyOpenSSL
+pyyaml
